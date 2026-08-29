@@ -22,6 +22,7 @@ final class KeyboardViewController: UIInputViewController {
     private var page: Page = .letters
     private var shifted = false
     private var characterKeys: [(button: KeyboardButton, character: String)] = []
+    private var variantPopup: VariantPopup?
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -54,6 +55,7 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func rebuildKeyboard() {
+        dismissVariantPopup()
         characterKeys.removeAll()
         keyboardStack.arrangedSubviews.forEach {
             keyboardStack.removeArrangedSubview($0)
@@ -94,7 +96,6 @@ final class KeyboardViewController: UIInputViewController {
                 self.updateCharacterKeys()
             }
         }
-        leading.widthAnchor.constraint(equalTo: row.widthAnchor, multiplier: 0.115).isActive = true
         row.addArrangedSubview(leading)
 
         characters.forEach { row.addArrangedSubview(makeCharacterKey($0)) }
@@ -103,13 +104,13 @@ final class KeyboardViewController: UIInputViewController {
             self?.textDocumentProxy.deleteBackward()
         }
         delete.accessibilityLabel = "Удалить"
-        delete.widthAnchor.constraint(equalTo: row.widthAnchor, multiplier: 0.115).isActive = true
         row.addArrangedSubview(delete)
         return row
     }
 
     private func makeBottomRow() -> UIView {
         let row = makeRow()
+        row.distribution = .fill
 
         let pageKey = makeSpecialKey(page == .letters ? "123" : "АБВ") { [weak self] in
             guard let self else { return }
@@ -117,27 +118,28 @@ final class KeyboardViewController: UIInputViewController {
             self.shifted = false
             self.rebuildKeyboard()
         }
-        pageKey.widthAnchor.constraint(equalTo: row.widthAnchor, multiplier: 0.16).isActive = true
         row.addArrangedSubview(pageKey)
+        pageKey.widthAnchor.constraint(equalTo: row.widthAnchor, multiplier: 0.16).isActive = true
 
         let globe = makeSpecialKey("◎", action: nil)
         globe.accessibilityLabel = "Следующая клавиатура"
         globe.addTarget(self, action: #selector(nextKeyboard(_:for:)), for: .allTouchEvents)
-        globe.widthAnchor.constraint(equalTo: row.widthAnchor, multiplier: 0.13).isActive = true
         row.addArrangedSubview(globe)
+        globe.widthAnchor.constraint(equalTo: row.widthAnchor, multiplier: 0.13).isActive = true
 
         let space = makeKey(title: "пробел", style: .character) { [weak self] in
             self?.insert(" ")
         }
         space.titleLabel?.font = .systemFont(ofSize: 16)
+        space.setContentHuggingPriority(.defaultLow, for: .horizontal)
         row.addArrangedSubview(space)
 
         let enter = makeSpecialKey("ввод") { [weak self] in
             self?.insert("\n")
         }
         enter.titleLabel?.font = .systemFont(ofSize: 15)
-        enter.widthAnchor.constraint(equalTo: row.widthAnchor, multiplier: 0.19).isActive = true
         row.addArrangedSubview(enter)
+        enter.widthAnchor.constraint(equalTo: row.widthAnchor, multiplier: 0.19).isActive = true
         return row
     }
 
@@ -150,10 +152,9 @@ final class KeyboardViewController: UIInputViewController {
         characterKeys.append((key, character))
 
         if variant(for: character) != nil {
-            key.longPressAction = { [weak self] in
-                guard let self, let variant = self.variant(for: character) else { return }
-                self.insert(variant)
-                self.resetShiftIfNeeded()
+            key.longPressAction = { [weak self, weak key] recognizer in
+                guard let self, let key else { return }
+                self.handleVariantGesture(recognizer, character: character, from: key)
             }
         }
         updateCharacterKey(key, character: character)
@@ -184,6 +185,58 @@ final class KeyboardViewController: UIInputViewController {
         guard shifted else { return }
         shifted = false
         updateCharacterKeys()
+    }
+
+    private func handleVariantGesture(
+        _ recognizer: UILongPressGestureRecognizer,
+        character: String,
+        from key: KeyboardButton
+    ) {
+        switch recognizer.state {
+        case .began:
+            let displayed = shifted ? character.uppercased() : character
+            guard let variant = variant(for: character) else { return }
+            showVariants([displayed, variant], from: key)
+        case .changed:
+            updateVariantSelection(at: recognizer.location(in: view))
+        case .ended:
+            updateVariantSelection(at: recognizer.location(in: view))
+            if let value = variantPopup?.selectedValue {
+                insert(value)
+                resetShiftIfNeeded()
+            }
+            dismissVariantPopup()
+        case .cancelled, .failed:
+            dismissVariantPopup()
+        default:
+            break
+        }
+    }
+
+    private func showVariants(_ variants: [String], from key: UIView) {
+        dismissVariantPopup()
+
+        let popup = VariantPopup(values: variants)
+        let keyFrame = key.convert(key.bounds, to: view)
+        let size = CGSize(width: 112, height: 56)
+        let x = min(max(4, keyFrame.midX - size.width / 2), view.bounds.width - size.width - 4)
+        let y = keyFrame.minY > size.height + 8
+            ? keyFrame.minY - size.height - 4
+            : keyFrame.maxY + 4
+        popup.frame = CGRect(origin: CGPoint(x: x, y: y), size: size)
+        view.addSubview(popup)
+        variantPopup = popup
+    }
+
+    private func updateVariantSelection(at location: CGPoint) {
+        guard let popup = variantPopup else { return }
+        let localLocation = view.convert(location, to: popup)
+        popup.selectValue(at: localLocation)
+    }
+
+    private func dismissVariantPopup() {
+        variantPopup?.removeFromSuperview()
+        variantPopup = nil
     }
 
     private func makeRow() -> UIStackView {
@@ -221,7 +274,7 @@ private final class KeyboardButton: UIButton {
     }
 
     var tapAction: (() -> Void)?
-    var longPressAction: (() -> Void)? {
+    var longPressAction: ((UILongPressGestureRecognizer) -> Void)? {
         didSet { longPressRecognizer.isEnabled = longPressAction != nil }
     }
 
@@ -262,7 +315,73 @@ private final class KeyboardButton: UIButton {
     @objc private func longPressed(_ recognizer: UILongPressGestureRecognizer) {
         if recognizer.state == .began {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            longPressAction?()
+        }
+        longPressAction?(recognizer)
+    }
+}
+
+private final class VariantPopup: UIView {
+    private let values: [String]
+    private let buttons: [KeyboardButton]
+    private var selectedIndex = 1
+
+    var selectedValue: String? {
+        values.indices.contains(selectedIndex) ? values[selectedIndex] : nil
+    }
+
+    init(values: [String]) {
+        self.values = values
+        self.buttons = values.map { value in
+            let button = KeyboardButton(style: .character)
+            button.setTitle(value, for: .normal)
+            button.accessibilityLabel = value
+            button.isUserInteractionEnabled = false
+            return button
+        }
+        super.init(frame: .zero)
+
+        backgroundColor = .secondarySystemBackground
+        layer.cornerRadius = 10
+        layer.shadowColor = UIColor.black.cgColor
+        layer.shadowOpacity = 0.25
+        layer.shadowRadius = 5
+        layer.shadowOffset = CGSize(width: 0, height: 2)
+        buttons.forEach(addSubview)
+        updateHighlight()
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let contentBounds = bounds.insetBy(dx: 4, dy: 4)
+        let spacing: CGFloat = 2
+        let buttonWidth = (contentBounds.width - spacing * CGFloat(buttons.count - 1)) / CGFloat(buttons.count)
+        for (index, button) in buttons.enumerated() {
+            button.frame = CGRect(
+                x: contentBounds.minX + CGFloat(index) * (buttonWidth + spacing),
+                y: contentBounds.minY,
+                width: buttonWidth,
+                height: contentBounds.height
+            )
+        }
+    }
+
+    func selectValue(at location: CGPoint) {
+        guard bounds.insetBy(dx: -12, dy: -18).contains(location) else { return }
+        let index = min(max(Int(location.x / (bounds.width / CGFloat(buttons.count))), 0), buttons.count - 1)
+        guard index != selectedIndex else { return }
+        selectedIndex = index
+        updateHighlight()
+    }
+
+    private func updateHighlight() {
+        for (index, button) in buttons.enumerated() {
+            let isSelected = index == selectedIndex
+            button.backgroundColor = isSelected ? .systemBlue : .systemBackground
+            button.setTitleColor(isSelected ? .white : .label, for: .normal)
         }
     }
 }
