@@ -21,17 +21,12 @@ final class KeyboardViewController: UIInputViewController {
     private let keyboardStack = UIStackView()
     private var page: Page = .letters
     private var shifted = false
-    private weak var variantPopup: UIView?
+    private var characterKeys: [(button: KeyboardButton, character: String)] = []
 
     override func viewDidLoad() {
         super.viewDidLoad()
         configureRootView()
         rebuildKeyboard()
-    }
-
-    override func viewWillLayoutSubviews() {
-        super.viewWillLayoutSubviews()
-        variantPopup?.removeFromSuperview()
     }
 
     private func configureRootView() {
@@ -59,6 +54,7 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func rebuildKeyboard() {
+        characterKeys.removeAll()
         keyboardStack.arrangedSubviews.forEach {
             keyboardStack.removeArrangedSubview($0)
             $0.removeFromSuperview()
@@ -95,7 +91,7 @@ final class KeyboardViewController: UIInputViewController {
             guard let self else { return }
             if self.page == .letters {
                 self.shifted.toggle()
-                self.rebuildKeyboard()
+                self.updateCharacterKeys()
             }
         }
         leading.widthAnchor.constraint(equalTo: row.widthAnchor, multiplier: 0.115).isActive = true
@@ -146,31 +142,48 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func makeCharacterKey(_ character: String) -> KeyboardButton {
-        let displayed = shifted ? character.uppercased() : character
-        let key = makeKey(title: displayed, style: .character) { [weak self] in
-            self?.insert(displayed)
-            if self?.shifted == true {
-                self?.shifted = false
-                self?.rebuildKeyboard()
-            }
+        let key = makeKey(title: character, style: .character) { [weak self] in
+            guard let self else { return }
+            self.insert(self.shifted ? character.uppercased() : character)
+            self.resetShiftIfNeeded()
         }
-        key.accessibilityLabel = displayed
+        characterKeys.append((key, character))
 
-        let variant: String?
-        switch character {
-        case "о": variant = shifted ? "Ө" : "ө"
-        case "у": variant = shifted ? "Ү" : "ү"
-        case "₽": variant = "₮"
-        default: variant = nil
-        }
-        if let variant {
-            key.longPressAction = { [weak self, weak key] in
-                guard let self, let key else { return }
-                self.showVariants([displayed, variant], from: key)
+        if variant(for: character) != nil {
+            key.longPressAction = { [weak self] in
+                guard let self, let variant = self.variant(for: character) else { return }
+                self.insert(variant)
+                self.resetShiftIfNeeded()
             }
-            key.accessibilityHint = "Удерживайте для \(variant)"
         }
+        updateCharacterKey(key, character: character)
         return key
+    }
+
+    private func updateCharacterKeys() {
+        characterKeys.forEach { updateCharacterKey($0.button, character: $0.character) }
+    }
+
+    private func updateCharacterKey(_ key: KeyboardButton, character: String) {
+        let displayed = shifted ? character.uppercased() : character
+        key.setTitle(displayed, for: .normal)
+        key.accessibilityLabel = displayed
+        key.accessibilityHint = variant(for: character).map { "Удерживайте для \($0)" }
+    }
+
+    private func variant(for character: String) -> String? {
+        switch character {
+        case "о": return shifted ? "Ө" : "ө"
+        case "у": return shifted ? "Ү" : "ү"
+        case "₽": return "₮"
+        default: return nil
+        }
+    }
+
+    private func resetShiftIfNeeded() {
+        guard shifted else { return }
+        shifted = false
+        updateCharacterKeys()
     }
 
     private func makeRow() -> UIStackView {
@@ -193,42 +206,7 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func insert(_ text: String) {
-        variantPopup?.removeFromSuperview()
         textDocumentProxy.insertText(text)
-    }
-
-    private func showVariants(_ variants: [String], from key: UIView) {
-        variantPopup?.removeFromSuperview()
-
-        let popup = UIStackView()
-        popup.axis = .horizontal
-        popup.spacing = 2
-        popup.distribution = .fillEqually
-        popup.backgroundColor = .secondarySystemBackground
-        popup.layer.cornerRadius = 10
-        popup.layer.shadowColor = UIColor.black.cgColor
-        popup.layer.shadowOpacity = 0.25
-        popup.layer.shadowRadius = 5
-        popup.layer.shadowOffset = CGSize(width: 0, height: 2)
-        popup.isLayoutMarginsRelativeArrangement = true
-        popup.layoutMargins = UIEdgeInsets(top: 4, left: 4, bottom: 4, right: 4)
-
-        variants.forEach { value in
-            let button = KeyboardButton(style: .character)
-            button.setTitle(value, for: .normal)
-            button.tapAction = { [weak self] in self?.insert(value) }
-            popup.addArrangedSubview(button)
-        }
-
-        let keyFrame = key.convert(key.bounds, to: view)
-        let width: CGFloat = 104
-        let height: CGFloat = 56
-        let x = min(max(4, keyFrame.midX - width / 2), view.bounds.width - width - 4)
-        let y = keyFrame.minY > height + 8 ? keyFrame.minY - height - 4 : keyFrame.maxY + 4
-        popup.frame = CGRect(x: x, y: y, width: width, height: height)
-        view.addSubview(popup)
-        variantPopup = popup
-        UIAccessibility.post(notification: .layoutChanged, argument: popup)
     }
 
     @objc private func nextKeyboard(_ sender: UIControl, for event: UIEvent) {
@@ -247,7 +225,6 @@ private final class KeyboardButton: UIButton {
         didSet { longPressRecognizer.isEnabled = longPressAction != nil }
     }
 
-    private var suppressTap = false
     private lazy var longPressRecognizer = UILongPressGestureRecognizer(target: self, action: #selector(longPressed(_:)))
 
     init(style: Style) {
@@ -265,7 +242,7 @@ private final class KeyboardButton: UIButton {
         addTarget(self, action: #selector(tapped), for: .touchUpInside)
 
         longPressRecognizer.minimumPressDuration = 0.38
-        longPressRecognizer.cancelsTouchesInView = false
+        longPressRecognizer.cancelsTouchesInView = true
         longPressRecognizer.isEnabled = false
         addGestureRecognizer(longPressRecognizer)
     }
@@ -279,20 +256,13 @@ private final class KeyboardButton: UIButton {
     }
 
     @objc private func tapped() {
-        if suppressTap {
-            suppressTap = false
-        } else {
-            tapAction?()
-        }
+        tapAction?()
     }
 
     @objc private func longPressed(_ recognizer: UILongPressGestureRecognizer) {
         if recognizer.state == .began {
-            suppressTap = true
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
             longPressAction?()
-        } else if recognizer.state == .cancelled || recognizer.state == .failed {
-            suppressTap = false
         }
     }
 }
