@@ -34,6 +34,7 @@ final class KeyboardViewController: UIInputViewController {
     ]
 
     private let keyboardStack = UIStackView()
+    private let touchRouter = KeyboardTouchRouterView()
     private weak var layoutContainer: UIView?
     private var page: Page = .letters
     private var shifted = false
@@ -63,9 +64,13 @@ final class KeyboardViewController: UIInputViewController {
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         updateLayoutMetrics()
+        if let layoutContainer {
+            layoutContainer.bringSubviewToFront(touchRouter)
+        }
     }
 
     deinit {
+        touchRouter.cancelAllTouches()
         backspaceRepeatTimer?.invalidate()
     }
 
@@ -86,6 +91,14 @@ final class KeyboardViewController: UIInputViewController {
         keyboardStack.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(keyboardStack)
 
+        touchRouter.translatesAutoresizingMaskIntoConstraints = false
+        touchRouter.buttonsProvider = { [weak self] in
+            self?.rowStacks.flatMap { row in
+                row.arrangedSubviews.compactMap { $0 as? KeyboardButton }
+            } ?? []
+        }
+        container.addSubview(touchRouter)
+
         keyboardHeightConstraint = container.heightAnchor.constraint(equalToConstant: 276)
         keyboardTopConstraint = keyboardStack.topAnchor.constraint(equalTo: container.topAnchor)
         keyboardLeadingConstraint = keyboardStack.leadingAnchor.constraint(equalTo: container.leadingAnchor)
@@ -97,7 +110,11 @@ final class KeyboardViewController: UIInputViewController {
             keyboardTopConstraint,
             keyboardLeadingConstraint,
             keyboardTrailingConstraint,
-            keyboardBottomConstraint
+            keyboardBottomConstraint,
+            touchRouter.topAnchor.constraint(equalTo: container.topAnchor),
+            touchRouter.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            touchRouter.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            touchRouter.bottomAnchor.constraint(equalTo: container.bottomAnchor)
         ])
     }
 
@@ -107,6 +124,7 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func rebuildKeyboard() {
+        touchRouter.cancelAllTouches()
         dismissVariantPopup()
         characterKeys.removeAll()
         rowStacks.removeAll()
@@ -319,14 +337,33 @@ final class KeyboardViewController: UIInputViewController {
             self.resetShiftIfNeeded()
         }
         characterKeys.append((key, character))
+        key.isRoutableCharacter = true
 
         if !variants(for: character).isEmpty {
             key.pressBeganAction = { [weak self] in
                 self?.prepareVariantFeedback()
             }
-            key.longPressAction = { [weak self, weak key] recognizer in
+            key.longPressBeganAction = { [weak self, weak key] location in
                 guard let self, let key else { return }
-                self.handleVariantGesture(recognizer, character: character, from: key)
+                self.beginVariantSelection(
+                    character: character,
+                    from: key,
+                    at: self.view.convert(location, from: self.touchRouter)
+                )
+            }
+            key.longPressMovedAction = { [weak self] location in
+                guard let self else { return }
+                self.updateVariantSelection(
+                    at: self.view.convert(location, from: self.touchRouter),
+                    emitFeedback: true
+                )
+            }
+            key.longPressEndedAction = { [weak self] location in
+                guard let self else { return }
+                self.endVariantSelection(at: self.view.convert(location, from: self.touchRouter))
+            }
+            key.longPressCancelledAction = { [weak self] in
+                self?.dismissVariantPopup()
             }
         }
         updateCharacterKey(key, character: character)
@@ -379,33 +416,26 @@ final class KeyboardViewController: UIInputViewController {
         updateCharacterKeys()
     }
 
-    private func handleVariantGesture(
-        _ recognizer: UILongPressGestureRecognizer,
+    private func beginVariantSelection(
         character: String,
-        from key: KeyboardButton
+        from key: KeyboardButton,
+        at location: CGPoint
     ) {
-        switch recognizer.state {
-        case .began:
-            let displayed = shifted ? character.uppercased() : character
-            let alternates = variants(for: character)
-            guard !alternates.isEmpty else { return }
-            showVariants([displayed] + alternates, from: key)
-            playVariantPresentationFeedback(at: recognizer.location(in: view))
-            variantSelectionFeedback.prepare()
-        case .changed:
-            updateVariantSelection(at: recognizer.location(in: view), emitFeedback: true)
-        case .ended:
-            updateVariantSelection(at: recognizer.location(in: view), emitFeedback: true)
-            if let value = variantPopup?.selectedValue {
-                insert(value)
-                resetShiftIfNeeded()
-            }
-            dismissVariantPopup()
-        case .cancelled, .failed:
-            dismissVariantPopup()
-        default:
-            break
+        let displayed = shifted ? character.uppercased() : character
+        let alternates = variants(for: character)
+        guard !alternates.isEmpty else { return }
+        showVariants([displayed] + alternates, from: key)
+        playVariantPresentationFeedback(at: location)
+        variantSelectionFeedback.prepare()
+    }
+
+    private func endVariantSelection(at location: CGPoint) {
+        updateVariantSelection(at: location, emitFeedback: true)
+        if let value = variantPopup?.selectedValue {
+            insert(value)
+            resetShiftIfNeeded()
         }
+        dismissVariantPopup()
     }
 
     private func showVariants(_ variants: [String], from key: UIView) {
@@ -575,14 +605,16 @@ private final class KeyboardButton: UIButton {
     var tapAction: (() -> Void)?
     var pressBeganAction: (() -> Void)?
     var pressEndedAction: (() -> Void)?
-    var longPressAction: ((UILongPressGestureRecognizer) -> Void)? {
-        didSet { longPressRecognizer.isEnabled = longPressAction != nil }
-    }
+    var longPressBeganAction: ((CGPoint) -> Void)?
+    var longPressMovedAction: ((CGPoint) -> Void)?
+    var longPressEndedAction: ((CGPoint) -> Void)?
+    var longPressCancelledAction: (() -> Void)?
+    var isRoutableCharacter = false
 
     private let style: Style
     private var usesActionStyle = false
     private var usesSelectedStyle = false
-    private lazy var longPressRecognizer = UILongPressGestureRecognizer(target: self, action: #selector(longPressed(_:)))
+    private var routedHighlightCount = 0
 
     init(style: Style) {
         self.style = style
@@ -609,11 +641,6 @@ private final class KeyboardButton: UIButton {
             for: [.touchUpInside, .touchUpOutside, .touchCancel, .touchDragExit]
         )
 
-        longPressRecognizer.minimumPressDuration = 0.42
-        longPressRecognizer.allowableMovement = 22
-        longPressRecognizer.cancelsTouchesInView = true
-        longPressRecognizer.isEnabled = false
-        addGestureRecognizer(longPressRecognizer)
     }
 
     required init?(coder: NSCoder) {
@@ -664,6 +691,16 @@ private final class KeyboardButton: UIButton {
         )
     }
 
+    func beginRoutedHighlight() {
+        routedHighlightCount += 1
+        isHighlighted = true
+    }
+
+    func endRoutedHighlight() {
+        routedHighlightCount = max(0, routedHighlightCount - 1)
+        isHighlighted = routedHighlightCount > 0
+    }
+
     private func applyAppearance() {
         if usesActionStyle {
             let pressedActionColor = UIColor { traits in
@@ -712,8 +749,248 @@ private final class KeyboardButton: UIButton {
         pressEndedAction?()
     }
 
-    @objc private func longPressed(_ recognizer: UILongPressGestureRecognizer) {
-        longPressAction?(recognizer)
+}
+
+private final class KeyboardTouchRouterView: UIView {
+    private enum TrackingMode {
+        case character
+        case control
+    }
+
+    private final class ActiveTouch {
+        let mode: TrackingMode
+        let initialKey: KeyboardButton
+        var currentKey: KeyboardButton?
+        var latestLocation: CGPoint
+        var longPressOrigin: CGPoint
+        var longPressTimer: Timer?
+        var isShowingVariants = false
+        var isHighlighted = true
+        var controlPressIsActive = false
+
+        init(mode: TrackingMode, key: KeyboardButton, location: CGPoint) {
+            self.mode = mode
+            initialKey = key
+            currentKey = key
+            latestLocation = location
+            longPressOrigin = location
+        }
+    }
+
+    var buttonsProvider: (() -> [KeyboardButton])?
+
+    private static let longPressDuration: TimeInterval = 0.42
+    private static let longPressMovement: CGFloat = 22
+    private var activeTouches: [UITouch: ActiveTouch] = [:]
+    private weak var variantTouch: UITouch?
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        // A fully transparent hosted-extension view does not contribute a remote
+        // hit-test region in the empty space between its opaque button siblings.
+        // Keep a visually imperceptible fill so those gaps still receive touches.
+        backgroundColor = UIColor(white: 0, alpha: 0.001)
+        isOpaque = false
+        isMultipleTouchEnabled = true
+        isAccessibilityElement = false
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        guard isUserInteractionEnabled, !isHidden, alpha > 0.01, self.point(inside: point, with: event) else {
+            return nil
+        }
+        return self
+    }
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        super.touchesBegan(touches, with: event)
+        for touch in touches {
+            let location = touch.location(in: self)
+            guard let key = nearestButton(at: location) else { continue }
+            let mode: TrackingMode = key.isRoutableCharacter ? .character : .control
+            let active = ActiveTouch(mode: mode, key: key, location: location)
+            activeTouches[touch] = active
+            key.beginRoutedHighlight()
+            key.pressBeganAction?()
+            if mode == .control {
+                active.controlPressIsActive = true
+            } else {
+                scheduleLongPress(for: touch, active: active, key: key)
+            }
+        }
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+        super.touchesMoved(touches, with: event)
+        for touch in touches {
+            guard let active = activeTouches[touch] else { continue }
+            let location = touch.location(in: self)
+            active.latestLocation = location
+
+            if active.isShowingVariants {
+                active.currentKey?.longPressMovedAction?(location)
+                continue
+            }
+
+            switch active.mode {
+            case .character:
+                updateCharacterTouch(touch, active: active, at: location)
+            case .control:
+                updateControlTouch(active, at: location)
+            }
+        }
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        super.touchesEnded(touches, with: event)
+        for touch in touches {
+            guard let active = activeTouches.removeValue(forKey: touch) else { continue }
+            active.longPressTimer?.invalidate()
+            active.longPressTimer = nil
+            let location = touch.location(in: self)
+
+            if active.isShowingVariants {
+                active.currentKey?.longPressEndedAction?(location)
+                if variantTouch === touch { variantTouch = nil }
+                continue
+            }
+
+            switch active.mode {
+            case .character:
+                if let key = active.currentKey {
+                    key.tapAction?()
+                    endHighlightIfNeeded(active, key: key)
+                }
+            case .control:
+                let isInside = nearestButton(at: location) === active.initialKey
+                if isInside {
+                    active.initialKey.tapAction?()
+                }
+                if active.controlPressIsActive {
+                    active.initialKey.pressEndedAction?()
+                }
+                endHighlightIfNeeded(active, key: active.initialKey)
+            }
+        }
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        super.touchesCancelled(touches, with: event)
+        for touch in touches {
+            cancel(touch)
+        }
+    }
+
+    func cancelAllTouches() {
+        for touch in Array(activeTouches.keys) {
+            cancel(touch)
+        }
+    }
+
+    private func updateCharacterTouch(_ touch: UITouch, active: ActiveTouch, at location: CGPoint) {
+        let nextKey = nearestButton(at: location).flatMap { key in
+            key.isRoutableCharacter ? key : nil
+        }
+
+        if nextKey !== active.currentKey {
+            active.longPressTimer?.invalidate()
+            active.longPressTimer = nil
+            if let currentKey = active.currentKey {
+                endHighlightIfNeeded(active, key: currentKey)
+            }
+            active.currentKey = nextKey
+            active.longPressOrigin = location
+            if let nextKey {
+                nextKey.beginRoutedHighlight()
+                active.isHighlighted = true
+                nextKey.pressBeganAction?()
+                scheduleLongPress(for: touch, active: active, key: nextKey)
+            }
+            return
+        }
+
+        let movement = hypot(location.x - active.longPressOrigin.x, location.y - active.longPressOrigin.y)
+        if movement > Self.longPressMovement {
+            active.longPressTimer?.invalidate()
+            active.longPressTimer = nil
+        }
+    }
+
+    private func updateControlTouch(_ active: ActiveTouch, at location: CGPoint) {
+        let isInside = nearestButton(at: location) === active.initialKey
+        guard isInside != active.isHighlighted else { return }
+        if isInside {
+            active.initialKey.beginRoutedHighlight()
+            active.isHighlighted = true
+        } else {
+            endHighlightIfNeeded(active, key: active.initialKey)
+            if active.controlPressIsActive {
+                active.initialKey.pressEndedAction?()
+                active.controlPressIsActive = false
+            }
+        }
+    }
+
+    private func scheduleLongPress(for touch: UITouch, active: ActiveTouch, key: KeyboardButton) {
+        guard key.longPressBeganAction != nil else { return }
+        let timer = Timer(timeInterval: Self.longPressDuration, repeats: false) {
+            [weak self, weak touch, weak active] _ in
+            guard let self, let touch, let active,
+                  self.variantTouch == nil,
+                  let tracked = self.activeTouches[touch],
+                  tracked === active,
+                  tracked.currentKey === key else { return }
+            tracked.longPressTimer = nil
+            tracked.isShowingVariants = true
+            self.variantTouch = touch
+            self.endHighlightIfNeeded(tracked, key: key)
+            key.longPressBeganAction?(tracked.latestLocation)
+        }
+        active.longPressTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    private func cancel(_ touch: UITouch) {
+        guard let active = activeTouches.removeValue(forKey: touch) else { return }
+        active.longPressTimer?.invalidate()
+        active.longPressTimer = nil
+        if active.isShowingVariants {
+            active.currentKey?.longPressCancelledAction?()
+            if variantTouch === touch { variantTouch = nil }
+        } else if active.mode == .control, active.controlPressIsActive {
+            active.initialKey.pressEndedAction?()
+        }
+        if let key = active.currentKey {
+            endHighlightIfNeeded(active, key: key)
+        }
+    }
+
+    private func endHighlightIfNeeded(_ active: ActiveTouch, key: KeyboardButton) {
+        guard active.isHighlighted else { return }
+        key.endRoutedHighlight()
+        active.isHighlighted = false
+    }
+
+    private func nearestButton(at location: CGPoint) -> KeyboardButton? {
+        guard let buttons = buttonsProvider?(), !buttons.isEmpty else { return nil }
+        var nearest: KeyboardButton?
+        var nearestDistance = CGFloat.greatestFiniteMagnitude
+
+        for button in buttons where !button.isHidden && button.alpha > 0.01 {
+            let frame = button.convert(button.bounds, to: self)
+            let dx = max(frame.minX - location.x, 0, location.x - frame.maxX)
+            let dy = max(frame.minY - location.y, 0, location.y - frame.maxY)
+            let distance = dx * dx + dy * dy
+            if distance < nearestDistance {
+                nearest = button
+                nearestDistance = distance
+            }
+        }
+        return nearest
     }
 }
 
