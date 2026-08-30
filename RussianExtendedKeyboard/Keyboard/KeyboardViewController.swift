@@ -45,10 +45,10 @@ final class KeyboardViewController: UIInputViewController {
         keyboardStack.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(keyboardStack)
 
-        let height = view.heightAnchor.constraint(equalToConstant: 272)
+        let height = view.heightAnchor.constraint(equalToConstant: 276)
         height.priority = .defaultHigh
         NSLayoutConstraint.activate([
-            keyboardStack.topAnchor.constraint(equalTo: view.topAnchor, constant: 62),
+            keyboardStack.topAnchor.constraint(equalTo: view.topAnchor, constant: 66),
             keyboardStack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 4),
             keyboardStack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -4),
             keyboardStack.heightAnchor.constraint(equalToConstant: 202),
@@ -262,7 +262,7 @@ final class KeyboardViewController: UIInputViewController {
 
         let popup = VariantPopup(values: variants)
         let keyFrame = key.convert(key.bounds, to: view)
-        let size = CGSize(width: CGFloat(variants.count) * 44 + 8, height: 50)
+        let size = CGSize(width: CGFloat(variants.count) * 33 + 20, height: 60)
         let x = min(max(4, keyFrame.midX - size.width / 2), view.bounds.width - size.width - 4)
         let y = keyFrame.minY - size.height - 4
         popup.frame = CGRect(origin: CGPoint(x: x, y: y), size: size)
@@ -423,7 +423,7 @@ private final class VariantPopup: UIView {
     private let values: [String]
     private let labels: [UILabel]
     private let selectionView = UIView()
-    private let materialView = UIVisualEffectView(effect: UIBlurEffect(style: .systemMaterial))
+    private let backgroundView = UIView()
     private var selectedIndex = 1
 
     var selectedValue: String? {
@@ -435,7 +435,7 @@ private final class VariantPopup: UIView {
         self.labels = values.map { value in
             let label = UILabel()
             label.text = value
-            label.font = .systemFont(ofSize: 21)
+            label.font = .systemFont(ofSize: 22)
             label.textAlignment = .center
             label.isAccessibilityElement = true
             label.accessibilityLabel = value
@@ -444,17 +444,22 @@ private final class VariantPopup: UIView {
         super.init(frame: .zero)
 
         backgroundColor = .clear
-        layer.cornerRadius = 9
+        layer.cornerRadius = 10
         layer.shadowColor = UIColor.black.cgColor
-        layer.shadowOpacity = 0.3
-        layer.shadowRadius = 6
+        layer.shadowOpacity = 0.22
+        layer.shadowRadius = 5
         layer.shadowOffset = CGSize(width: 0, height: 2)
-        materialView.layer.cornerRadius = 9
-        materialView.clipsToBounds = true
-        addSubview(materialView)
+        backgroundView.backgroundColor = UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(white: 0.34, alpha: 0.98)
+                : UIColor(white: 1, alpha: 0.98)
+        }
+        backgroundView.layer.cornerRadius = 10
+        backgroundView.clipsToBounds = true
+        addSubview(backgroundView)
 
         selectionView.backgroundColor = .systemBlue
-        selectionView.layer.cornerRadius = 6
+        selectionView.layer.cornerRadius = 11
         addSubview(selectionView)
         labels.forEach(addSubview)
         updateHighlight()
@@ -466,8 +471,8 @@ private final class VariantPopup: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        materialView.frame = bounds
-        let contentBounds = bounds.insetBy(dx: 4, dy: 4)
+        backgroundView.frame = bounds
+        let contentBounds = CGRect(x: 10, y: 6, width: bounds.width - 20, height: 48)
         let optionWidth = contentBounds.width / CGFloat(labels.count)
         selectionView.frame = CGRect(
             x: contentBounds.minX + CGFloat(selectedIndex) * optionWidth,
@@ -487,7 +492,7 @@ private final class VariantPopup: UIView {
 
     func selectValue(at location: CGPoint) {
         guard bounds.insetBy(dx: -12, dy: -18).contains(location) else { return }
-        let contentBounds = bounds.insetBy(dx: 4, dy: 4)
+        let contentBounds = CGRect(x: 10, y: 6, width: bounds.width - 20, height: 48)
         let optionWidth = contentBounds.width / CGFloat(labels.count)
         let index = min(
             max(Int((location.x - contentBounds.minX) / optionWidth), 0),
