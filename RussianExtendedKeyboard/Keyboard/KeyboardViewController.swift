@@ -121,12 +121,6 @@ final class KeyboardViewController: UIInputViewController {
         row.addArrangedSubview(pageKey)
         pageKey.widthAnchor.constraint(equalTo: row.widthAnchor, multiplier: 0.16).isActive = true
 
-        let globe = makeSpecialKey("◎", action: nil)
-        globe.accessibilityLabel = "Следующая клавиатура"
-        globe.addTarget(self, action: #selector(nextKeyboard(_:for:)), for: .allTouchEvents)
-        row.addArrangedSubview(globe)
-        globe.widthAnchor.constraint(equalTo: row.widthAnchor, multiplier: 0.13).isActive = true
-
         let space = makeKey(title: "пробел", style: .character) { [weak self] in
             self?.insert(" ")
         }
@@ -262,9 +256,6 @@ final class KeyboardViewController: UIInputViewController {
         textDocumentProxy.insertText(text)
     }
 
-    @objc private func nextKeyboard(_ sender: UIControl, for event: UIEvent) {
-        handleInputModeList(from: sender, with: event)
-    }
 }
 
 private final class KeyboardButton: UIButton {
