@@ -218,8 +218,10 @@ final class KeyboardViewController: UIInputViewController {
 
     private func variant(for character: String) -> String? {
         switch character {
+        case "е": return shifted ? "Ё" : "ё"
         case "о": return shifted ? "Ө" : "ө"
         case "у": return shifted ? "Ү" : "ү"
+        case "ь": return shifted ? "Ъ" : "ъ"
         case "₽": return "₮"
         default: return nil
         }
