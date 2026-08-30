@@ -412,8 +412,8 @@ final class KeyboardViewController: UIInputViewController {
 
         keyboardHeightConstraint.constant = metrics.keyboardHeight
         candidateTopConstraint.constant = metrics.candidateTopInset
-        candidateLeadingConstraint.constant = metrics.horizontalInset
-        candidateTrailingConstraint.constant = -metrics.horizontalInset
+        candidateLeadingConstraint.constant = metrics.candidateHorizontalInset
+        candidateTrailingConstraint.constant = -metrics.candidateHorizontalInset
         candidateHeightConstraint.constant = metrics.candidateHeight
         keyboardTopConstraint.constant = metrics.candidateToKeysSpacing
         keyboardLeadingConstraint.constant = metrics.horizontalInset
@@ -460,6 +460,7 @@ private struct KeyboardMetrics: Equatable {
     let candidateHeight: CGFloat
     let candidateToKeysSpacing: CGFloat
     let bottomInset: CGFloat
+    let candidateHorizontalInset: CGFloat
     let horizontalInset: CGFloat
     let rowSpacing: CGFloat
     let keySpacing: CGFloat
@@ -474,27 +475,25 @@ private struct KeyboardMetrics: Equatable {
             candidateHeight = 20
             candidateToKeysSpacing = 4
             bottomInset = 4
-            horizontalInset = Self.clamp(width * 0.004, minimum: 2, maximum: 4)
+            candidateHorizontalInset = Self.clamp(width * 0.004, minimum: 2, maximum: 4)
             rowSpacing = 5
             keySpacing = Self.clamp(width * 0.007, minimum: 3, maximum: 5)
+            horizontalInset = keySpacing
             bottomSideKeyWidth = (width - 2 * horizontalInset) * 0.18
             return
         }
 
-        // The decoded iPhone templates grow from a 320-point, 42-point-row
-        // keyplane to taller Choco/Truffle keyplanes. Interpolate within that
-        // family instead of locking every device to one set of pixel values.
-        let templateWidth = Self.clamp(width, minimum: 320, maximum: 414)
-        let progress = (templateWidth - 320) / (414 - 320)
-
-        keyboardHeight = (237 + 12 * progress).rounded()
+        // Measured from the native Russian keyplane on an iPhone 15 at 3x:
+        // 20 px edges, 18 px columns, 43 px top, 33 px rows, 34 px bottom.
+        keyboardHeight = 692 / 3
         candidateTopInset = 0
-        candidateHeight = 24
-        candidateToKeysSpacing = 4
-        bottomInset = 8
-        horizontalInset = Self.clamp(width * 0.003125, minimum: 1, maximum: 2)
-        rowSpacing = (12 - 4 * progress).rounded()
-        keySpacing = Self.clamp(width * 0.009, minimum: 3, maximum: 4)
+        candidateHeight = 43 / 3
+        candidateToKeysSpacing = 0
+        bottomInset = 34 / 3
+        candidateHorizontalInset = Self.clamp(width * 0.003125, minimum: 1, maximum: 2)
+        rowSpacing = 11
+        keySpacing = 6
+        horizontalInset = 20 / 3
         bottomSideKeyWidth = (width - 2 * horizontalInset) * 0.24
     }
 
