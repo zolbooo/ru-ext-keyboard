@@ -21,6 +21,12 @@ typed text.
 
 ## Distribution
 
-`main` is the TestFlight branch and `production` is the App Store release
-branch. See [the Xcode Cloud workflow guide](docs/XCODE_CLOUD.md) for setup,
-versioning, promotion, and branch-protection details.
+- `main` → **Main — TestFlight**: clean Release archive, **TestFlight
+  (Internal Testing Only)**, then distribute to the internal tester group.
+- `production` → **Production — App Store**: clean Release archive,
+  **TestFlight and App Store**, then upload to App Store Connect.
+
+Configure both workflows from Xcode's Report navigator using the shared
+`RussianExtendedKeyboard` scheme. Promote releases by merging `main` into
+`production`; update `MARKETING_VERSION` before promotion. Xcode Cloud provides
+the build number automatically.
