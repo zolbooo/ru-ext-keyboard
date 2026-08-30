@@ -537,7 +537,20 @@ private final class KeyboardButton: UIButton {
     }
 
     override var isHighlighted: Bool {
-        didSet { alpha = isHighlighted ? 0.7 : 1 }
+        didSet {
+            if isHighlighted {
+                layer.removeAllAnimations()
+                applyAppearance()
+            } else {
+                UIView.animate(
+                    withDuration: 0.08,
+                    delay: 0,
+                    options: [.allowUserInteraction, .beginFromCurrentState, .curveEaseOut]
+                ) { [weak self] in
+                    self?.applyAppearance()
+                }
+            }
+        }
     }
 
     override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
@@ -569,7 +582,12 @@ private final class KeyboardButton: UIButton {
 
     private func applyAppearance() {
         if usesActionStyle {
-            backgroundColor = .systemBlue
+            let pressedActionColor = UIColor { traits in
+                traits.userInterfaceStyle == .dark
+                    ? UIColor(red: 0.03, green: 0.36, blue: 0.76, alpha: 1)
+                    : UIColor(red: 0, green: 0.38, blue: 0.80, alpha: 1)
+            }
+            backgroundColor = isHighlighted ? pressedActionColor : .systemBlue
             setTitleColor(.white, for: .normal)
             tintColor = .white
             return
@@ -585,7 +603,15 @@ private final class KeyboardButton: UIButton {
                 ? UIColor(white: 0.24, alpha: 0.88)
                 : UIColor(white: 0.62, alpha: 0.72)
         }
-        backgroundColor = style == .character || usesSelectedStyle ? characterColor : specialColor
+        let pressedCharacterColor = UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(white: 0.52, alpha: 0.96)
+                : UIColor(white: 0.72, alpha: 0.96)
+        }
+        let usesCharacterColor = style == .character || usesSelectedStyle
+        let normalColor = usesCharacterColor ? characterColor : specialColor
+        let highlightedColor = usesCharacterColor ? pressedCharacterColor : characterColor
+        backgroundColor = isHighlighted ? highlightedColor : normalColor
         setTitleColor(.label, for: .normal)
         tintColor = .label
     }
