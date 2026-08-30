@@ -340,7 +340,7 @@ final class KeyboardViewController: UIInputViewController {
             - VariantPopup.horizontalPadding
             - (CGFloat(baseIndex) + 0.5) * optionWidth
         let x = min(max(4, desiredX), view.bounds.width - size.width - 4)
-        let y = keyFrame.minY - size.height - 4
+        let y = max(2, keyFrame.minY - size.height - 2)
         let popup = VariantPopup(
             values: orderedVariants,
             selectedIndex: baseIndex,
@@ -469,9 +469,9 @@ private struct KeyboardMetrics: Equatable {
         let isCompact = traits.verticalSizeClass == .compact || width >= 560
 
         if isCompact {
-            keyboardHeight = 207
-            candidateTopInset = 2
-            candidateHeight = 38
+            keyboardHeight = 187
+            candidateTopInset = 0
+            candidateHeight = 20
             candidateToKeysSpacing = 4
             bottomInset = 4
             horizontalInset = Self.clamp(width * 0.004, minimum: 2, maximum: 4)
@@ -487,10 +487,10 @@ private struct KeyboardMetrics: Equatable {
         let templateWidth = Self.clamp(width, minimum: 320, maximum: 414)
         let progress = (templateWidth - 320) / (414 - 320)
 
-        keyboardHeight = (276 + 12 * progress).rounded()
-        candidateTopInset = 4
-        candidateHeight = (50 + 6 * progress).rounded()
-        candidateToKeysSpacing = 8
+        keyboardHeight = (237 + 12 * progress).rounded()
+        candidateTopInset = 0
+        candidateHeight = 24
+        candidateToKeysSpacing = 4
         bottomInset = 8
         horizontalInset = Self.clamp(width * 0.003125, minimum: 1, maximum: 2)
         rowSpacing = (12 - 4 * progress).rounded()
@@ -507,6 +507,7 @@ private final class CandidateBarView: UIView {
     var selectionHandler: ((String) -> Void)?
 
     private let stack = UIStackView()
+    private var separators: [UIView] = []
     private lazy var buttons: [UIButton] = (0..<3).map { index in
         let button = UIButton(type: .system)
         button.tag = index
@@ -532,10 +533,11 @@ private final class CandidateBarView: UIView {
             separator.backgroundColor = .separator
             separator.translatesAutoresizingMaskIntoConstraints = false
             button.addSubview(separator)
+            separators.append(separator)
             NSLayoutConstraint.activate([
-                separator.topAnchor.constraint(equalTo: button.topAnchor, constant: 10),
+                separator.topAnchor.constraint(equalTo: button.topAnchor, constant: 6),
                 separator.trailingAnchor.constraint(equalTo: button.trailingAnchor),
-                separator.bottomAnchor.constraint(equalTo: button.bottomAnchor, constant: -10),
+                separator.bottomAnchor.constraint(equalTo: button.bottomAnchor, constant: -6),
                 separator.widthAnchor.constraint(equalToConstant: 1 / UIScreen.main.scale)
             ])
         }
@@ -555,6 +557,7 @@ private final class CandidateBarView: UIView {
     }
 
     func setCandidates(_ candidates: [String]) {
+        separators.forEach { $0.isHidden = candidates.isEmpty }
         for (index, button) in buttons.enumerated() {
             let candidate = candidates.indices.contains(index) ? candidates[index] : nil
             button.setTitle(candidate, for: .normal)
@@ -676,8 +679,8 @@ private final class KeyboardButton: UIButton {
 private final class VariantPopup: UIView {
     static let horizontalPadding: CGFloat = 8
 
-    private static let bodyHeight: CGFloat = 54
-    private static let verticalContentInset: CGFloat = 3
+    private static let bodyHeight: CGFloat = 44
+    private static let verticalContentInset: CGFloat = 2
     private static let selectionCornerRadius: CGFloat = 9
 
     private let values: [String]
