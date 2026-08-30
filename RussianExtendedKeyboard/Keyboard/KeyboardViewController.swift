@@ -23,6 +23,7 @@ final class KeyboardViewController: UIInputViewController {
     private var shifted = false
     private var characterKeys: [(button: KeyboardButton, character: String)] = []
     private var variantPopup: VariantPopup?
+    private weak var returnKey: KeyboardButton?
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -31,27 +32,33 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func configureRootView() {
-        view.backgroundColor = UIColor { traits in
-            traits.userInterfaceStyle == .dark
-                ? UIColor(red: 0.12, green: 0.13, blue: 0.15, alpha: 1)
-                : UIColor(red: 0.82, green: 0.84, blue: 0.87, alpha: 1)
-        }
+        view.backgroundColor = .clear
+        view.isOpaque = false
+        view.clipsToBounds = false
+        inputView?.backgroundColor = .clear
+        inputView?.isOpaque = false
+        inputView?.clipsToBounds = false
 
         keyboardStack.axis = .vertical
-        keyboardStack.spacing = 7
+        keyboardStack.spacing = 8
         keyboardStack.distribution = .fillEqually
         keyboardStack.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(keyboardStack)
 
-        let height = view.heightAnchor.constraint(equalToConstant: 258)
+        let height = view.heightAnchor.constraint(equalToConstant: 272)
         height.priority = .defaultHigh
         NSLayoutConstraint.activate([
-            keyboardStack.topAnchor.constraint(equalTo: view.topAnchor, constant: 7),
+            keyboardStack.topAnchor.constraint(equalTo: view.topAnchor, constant: 62),
             keyboardStack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 4),
             keyboardStack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -4),
-            keyboardStack.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -7),
+            keyboardStack.heightAnchor.constraint(equalToConstant: 202),
             height
         ])
+    }
+
+    override func textDidChange(_ textInput: UITextInput?) {
+        super.textDidChange(textInput)
+        updateReturnKey()
     }
 
     private func rebuildKeyboard() {
@@ -88,23 +95,35 @@ final class KeyboardViewController: UIInputViewController {
 
     private func makeThirdRow(_ characters: [String]) -> UIView {
         let row = makeRow()
+        row.distribution = .fill
 
-        let leading = makeSpecialKey(page == .letters ? (shifted ? "⇧" : "⇧") : "#+=") { [weak self] in
+        let leading = page == .letters
+            ? makeIconKey("shift", accessibilityLabel: "Сдвиг")
+            : makeSpecialKey("#+=", action: nil)
+        leading.tapAction = { [weak self, weak leading] in
             guard let self else { return }
             if self.page == .letters {
                 self.shifted.toggle()
+                leading?.setImage(
+                    UIImage(systemName: self.shifted ? "shift.fill" : "shift"),
+                    for: .normal
+                )
+                leading?.setSelectedStyle(self.shifted)
                 self.updateCharacterKeys()
             }
         }
         row.addArrangedSubview(leading)
+        leading.widthAnchor.constraint(equalTo: row.widthAnchor, multiplier: 0.11).isActive = true
 
-        characters.forEach { row.addArrangedSubview(makeCharacterKey($0)) }
+        let characterRow = makeRow()
+        characters.forEach { characterRow.addArrangedSubview(makeCharacterKey($0)) }
+        row.addArrangedSubview(characterRow)
 
-        let delete = makeSpecialKey("⌫") { [weak self] in
+        let delete = makeIconKey("delete.left", accessibilityLabel: "Удалить") { [weak self] in
             self?.textDocumentProxy.deleteBackward()
         }
-        delete.accessibilityLabel = "Удалить"
         row.addArrangedSubview(delete)
+        delete.widthAnchor.constraint(equalTo: row.widthAnchor, multiplier: 0.11).isActive = true
         return row
     }
 
@@ -119,7 +138,7 @@ final class KeyboardViewController: UIInputViewController {
             self.rebuildKeyboard()
         }
         row.addArrangedSubview(pageKey)
-        pageKey.widthAnchor.constraint(equalTo: row.widthAnchor, multiplier: 0.16).isActive = true
+        pageKey.widthAnchor.constraint(equalTo: row.widthAnchor, multiplier: 0.24).isActive = true
 
         let space = makeKey(title: "пробел", style: .character) { [weak self] in
             self?.insert(" ")
@@ -133,8 +152,39 @@ final class KeyboardViewController: UIInputViewController {
         }
         enter.titleLabel?.font = .systemFont(ofSize: 15)
         row.addArrangedSubview(enter)
-        enter.widthAnchor.constraint(equalTo: row.widthAnchor, multiplier: 0.19).isActive = true
+        enter.widthAnchor.constraint(equalTo: row.widthAnchor, multiplier: 0.24).isActive = true
+        returnKey = enter
+        updateReturnKey()
         return row
+    }
+
+    private func updateReturnKey() {
+        guard let returnKey else { return }
+
+        returnKey.setImage(nil, for: .normal)
+        let returnKeyType = textDocumentProxy.returnKeyType
+        switch returnKeyType {
+        case .search:
+            returnKey.setTitle(nil, for: .normal)
+            returnKey.setImage(UIImage(systemName: "magnifyingglass"), for: .normal)
+            returnKey.accessibilityLabel = "Найти"
+        case .done:
+            returnKey.setTitle("готово", for: .normal)
+            returnKey.accessibilityLabel = "Готово"
+        case .go:
+            returnKey.setTitle("перейти", for: .normal)
+            returnKey.accessibilityLabel = "Перейти"
+        case .next:
+            returnKey.setTitle("далее", for: .normal)
+            returnKey.accessibilityLabel = "Далее"
+        case .send:
+            returnKey.setTitle("отправить", for: .normal)
+            returnKey.accessibilityLabel = "Отправить"
+        default:
+            returnKey.setTitle("ввод", for: .normal)
+            returnKey.accessibilityLabel = "Ввод"
+        }
+        returnKey.setActionStyle(returnKeyType != .default)
     }
 
     private func makeCharacterKey(_ character: String) -> KeyboardButton {
@@ -212,13 +262,13 @@ final class KeyboardViewController: UIInputViewController {
 
         let popup = VariantPopup(values: variants)
         let keyFrame = key.convert(key.bounds, to: view)
-        let size = CGSize(width: 112, height: 56)
+        let size = CGSize(width: CGFloat(variants.count) * 44 + 8, height: 50)
         let x = min(max(4, keyFrame.midX - size.width / 2), view.bounds.width - size.width - 4)
-        let y = keyFrame.minY > size.height + 8
-            ? keyFrame.minY - size.height - 4
-            : keyFrame.maxY + 4
+        let y = keyFrame.minY - size.height - 4
         popup.frame = CGRect(origin: CGPoint(x: x, y: y), size: size)
+        popup.layer.zPosition = 10
         view.addSubview(popup)
+        view.bringSubviewToFront(popup)
         variantPopup = popup
     }
 
@@ -245,6 +295,18 @@ final class KeyboardViewController: UIInputViewController {
         makeKey(title: title, style: .special, action: action)
     }
 
+    private func makeIconKey(
+        _ systemName: String,
+        accessibilityLabel: String,
+        action: (() -> Void)? = nil
+    ) -> KeyboardButton {
+        let key = KeyboardButton(style: .special)
+        key.setImage(UIImage(systemName: systemName), for: .normal)
+        key.accessibilityLabel = accessibilityLabel
+        key.tapAction = action
+        return key
+    }
+
     private func makeKey(title: String, style: KeyboardButton.Style, action: (() -> Void)?) -> KeyboardButton {
         let key = KeyboardButton(style: style)
         key.setTitle(title, for: .normal)
@@ -269,20 +331,28 @@ private final class KeyboardButton: UIButton {
         didSet { longPressRecognizer.isEnabled = longPressAction != nil }
     }
 
+    private let style: Style
+    private var usesActionStyle = false
+    private var usesSelectedStyle = false
     private lazy var longPressRecognizer = UILongPressGestureRecognizer(target: self, action: #selector(longPressed(_:)))
 
     init(style: Style) {
+        self.style = style
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
-        layer.cornerRadius = 5
+        layer.cornerRadius = 6
         layer.shadowColor = UIColor.black.cgColor
-        layer.shadowOpacity = 0.22
+        layer.shadowOpacity = 0.18
         layer.shadowRadius = 0
         layer.shadowOffset = CGSize(width: 0, height: 1)
-        titleLabel?.font = .systemFont(ofSize: style == .character ? 22 : 18)
-        setTitleColor(.label, for: .normal)
-        setTitleColor(.secondaryLabel, for: .highlighted)
-        backgroundColor = style == .character ? .systemBackground : .systemGray3
+        titleLabel?.font = .systemFont(ofSize: style == .character ? 21 : 17)
+        titleLabel?.adjustsFontSizeToFitWidth = true
+        titleLabel?.minimumScaleFactor = 0.72
+        setPreferredSymbolConfiguration(
+            UIImage.SymbolConfiguration(pointSize: 18, weight: .regular),
+            forImageIn: .normal
+        )
+        applyAppearance()
         addTarget(self, action: #selector(tapped), for: .touchUpInside)
 
         longPressRecognizer.minimumPressDuration = 0.38
@@ -296,7 +366,45 @@ private final class KeyboardButton: UIButton {
     }
 
     override var isHighlighted: Bool {
-        didSet { alpha = isHighlighted ? 0.62 : 1 }
+        didSet { alpha = isHighlighted ? 0.7 : 1 }
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        applyAppearance()
+    }
+
+    func setActionStyle(_ enabled: Bool) {
+        usesActionStyle = enabled
+        applyAppearance()
+    }
+
+    func setSelectedStyle(_ enabled: Bool) {
+        usesSelectedStyle = enabled
+        applyAppearance()
+    }
+
+    private func applyAppearance() {
+        if usesActionStyle {
+            backgroundColor = .systemBlue
+            setTitleColor(.white, for: .normal)
+            tintColor = .white
+            return
+        }
+
+        let characterColor = UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(white: 0.34, alpha: 0.82)
+                : UIColor(white: 1, alpha: 0.94)
+        }
+        let specialColor = UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(white: 0.24, alpha: 0.88)
+                : UIColor(white: 0.62, alpha: 0.72)
+        }
+        backgroundColor = style == .character || usesSelectedStyle ? characterColor : specialColor
+        setTitleColor(.label, for: .normal)
+        tintColor = .label
     }
 
     @objc private func tapped() {
@@ -313,7 +421,9 @@ private final class KeyboardButton: UIButton {
 
 private final class VariantPopup: UIView {
     private let values: [String]
-    private let buttons: [KeyboardButton]
+    private let labels: [UILabel]
+    private let selectionView = UIView()
+    private let materialView = UIVisualEffectView(effect: UIBlurEffect(style: .systemMaterial))
     private var selectedIndex = 1
 
     var selectedValue: String? {
@@ -322,22 +432,31 @@ private final class VariantPopup: UIView {
 
     init(values: [String]) {
         self.values = values
-        self.buttons = values.map { value in
-            let button = KeyboardButton(style: .character)
-            button.setTitle(value, for: .normal)
-            button.accessibilityLabel = value
-            button.isUserInteractionEnabled = false
-            return button
+        self.labels = values.map { value in
+            let label = UILabel()
+            label.text = value
+            label.font = .systemFont(ofSize: 21)
+            label.textAlignment = .center
+            label.isAccessibilityElement = true
+            label.accessibilityLabel = value
+            return label
         }
         super.init(frame: .zero)
 
-        backgroundColor = .secondarySystemBackground
-        layer.cornerRadius = 10
+        backgroundColor = .clear
+        layer.cornerRadius = 9
         layer.shadowColor = UIColor.black.cgColor
-        layer.shadowOpacity = 0.25
-        layer.shadowRadius = 5
+        layer.shadowOpacity = 0.3
+        layer.shadowRadius = 6
         layer.shadowOffset = CGSize(width: 0, height: 2)
-        buttons.forEach(addSubview)
+        materialView.layer.cornerRadius = 9
+        materialView.clipsToBounds = true
+        addSubview(materialView)
+
+        selectionView.backgroundColor = .systemBlue
+        selectionView.layer.cornerRadius = 6
+        addSubview(selectionView)
+        labels.forEach(addSubview)
         updateHighlight()
     }
 
@@ -347,14 +466,20 @@ private final class VariantPopup: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        materialView.frame = bounds
         let contentBounds = bounds.insetBy(dx: 4, dy: 4)
-        let spacing: CGFloat = 2
-        let buttonWidth = (contentBounds.width - spacing * CGFloat(buttons.count - 1)) / CGFloat(buttons.count)
-        for (index, button) in buttons.enumerated() {
-            button.frame = CGRect(
-                x: contentBounds.minX + CGFloat(index) * (buttonWidth + spacing),
+        let optionWidth = contentBounds.width / CGFloat(labels.count)
+        selectionView.frame = CGRect(
+            x: contentBounds.minX + CGFloat(selectedIndex) * optionWidth,
+            y: contentBounds.minY,
+            width: optionWidth,
+            height: contentBounds.height
+        )
+        for (index, label) in labels.enumerated() {
+            label.frame = CGRect(
+                x: contentBounds.minX + CGFloat(index) * optionWidth,
                 y: contentBounds.minY,
-                width: buttonWidth,
+                width: optionWidth,
                 height: contentBounds.height
             )
         }
@@ -362,17 +487,21 @@ private final class VariantPopup: UIView {
 
     func selectValue(at location: CGPoint) {
         guard bounds.insetBy(dx: -12, dy: -18).contains(location) else { return }
-        let index = min(max(Int(location.x / (bounds.width / CGFloat(buttons.count))), 0), buttons.count - 1)
+        let contentBounds = bounds.insetBy(dx: 4, dy: 4)
+        let optionWidth = contentBounds.width / CGFloat(labels.count)
+        let index = min(
+            max(Int((location.x - contentBounds.minX) / optionWidth), 0),
+            labels.count - 1
+        )
         guard index != selectedIndex else { return }
         selectedIndex = index
         updateHighlight()
+        setNeedsLayout()
     }
 
     private func updateHighlight() {
-        for (index, button) in buttons.enumerated() {
-            let isSelected = index == selectedIndex
-            button.backgroundColor = isSelected ? .systemBlue : .systemBackground
-            button.setTitleColor(isSelected ? .white : .label, for: .normal)
+        for (index, label) in labels.enumerated() {
+            label.textColor = index == selectedIndex ? .white : .label
         }
     }
 }
