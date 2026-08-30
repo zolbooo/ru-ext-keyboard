@@ -4,6 +4,7 @@ final class KeyboardViewController: UIInputViewController {
     private enum Page {
         case letters
         case symbols
+        case moreSymbols
     }
 
     private let letterRows = [
@@ -15,7 +16,13 @@ final class KeyboardViewController: UIInputViewController {
     private let symbolRows = [
         ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"],
         ["-", "/", ":", ";", "(", ")", "₽", "&", "@", "\""] ,
-        [".", ",", "?", "!", "'", "+", "=", "%"]
+        [".", ",", "?", "!", "'"]
+    ]
+
+    private let moreSymbolRows = [
+        ["[", "]", "{", "}", "#", "%", "^", "*", "+", "="],
+        ["_", "\\", "|", "~", "<", ">", "$", "€", "£", "•"],
+        [".", ",", "?", "!", "'"]
     ]
 
     private let candidateBar = CandidateBarView()
@@ -36,6 +43,8 @@ final class KeyboardViewController: UIInputViewController {
     private var keyboardLeadingConstraint: NSLayoutConstraint!
     private var keyboardTrailingConstraint: NSLayoutConstraint!
     private var keyboardBottomConstraint: NSLayoutConstraint!
+    private var variantPresentationFeedback: UIImpactFeedbackGenerator!
+    private var variantSelectionFeedback: UISelectionFeedbackGenerator!
     private var variantPopup: VariantPopup?
     private weak var returnKey: KeyboardButton?
 
@@ -60,6 +69,7 @@ final class KeyboardViewController: UIInputViewController {
 
         guard let container = inputView ?? view else { return }
         layoutContainer = container
+        configureVariantFeedback(for: container)
 
         candidateBar.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(candidateBar)
@@ -107,7 +117,15 @@ final class KeyboardViewController: UIInputViewController {
             $0.removeFromSuperview()
         }
 
-        let rows = page == .letters ? letterRows : symbolRows
+        let rows: [[String]]
+        switch page {
+        case .letters:
+            rows = letterRows
+        case .symbols:
+            rows = symbolRows
+        case .moreSymbols:
+            rows = moreSymbolRows
+        }
         keyboardStack.addArrangedSubview(makeCharacterRow(rows[0]))
         keyboardStack.addArrangedSubview(makeCharacterRow(rows[1]))
         keyboardStack.addArrangedSubview(makeThirdRow(rows[2]))
@@ -124,12 +142,19 @@ final class KeyboardViewController: UIInputViewController {
     private func makeThirdRow(_ characters: [String]) -> UIView {
         let row = makeRow()
 
-        let leading = page == .letters
-            ? makeIconKey("shift", accessibilityLabel: "Сдвиг")
-            : makeSpecialKey("#+=", action: nil)
+        let leading: KeyboardButton
+        switch page {
+        case .letters:
+            leading = makeIconKey("shift", accessibilityLabel: "Сдвиг", style: .character)
+        case .symbols:
+            leading = makeIconKey("number", accessibilityLabel: "Дополнительные символы", style: .character)
+        case .moreSymbols:
+            leading = makeIconKey("textformat.123", accessibilityLabel: "Цифры", style: .character)
+        }
         leading.tapAction = { [weak self, weak leading] in
             guard let self else { return }
-            if self.page == .letters {
+            switch self.page {
+            case .letters:
                 self.shifted.toggle()
                 leading?.setImage(
                     UIImage(systemName: self.shifted ? "shift.fill" : "shift"),
@@ -137,12 +162,18 @@ final class KeyboardViewController: UIInputViewController {
                 )
                 leading?.setSelectedStyle(self.shifted)
                 self.updateCharacterKeys()
+            case .symbols:
+                self.page = .moreSymbols
+                self.rebuildKeyboard()
+            case .moreSymbols:
+                self.page = .symbols
+                self.rebuildKeyboard()
             }
         }
         row.addArrangedSubview(leading)
         characters.forEach { row.addArrangedSubview(makeCharacterKey($0)) }
 
-        let delete = makeIconKey("delete.left", accessibilityLabel: "Удалить") { [weak self] in
+        let delete = makeIconKey("delete.left", accessibilityLabel: "Удалить", style: .character) { [weak self] in
             self?.textDocumentProxy.deleteBackward()
         }
         row.addArrangedSubview(delete)
@@ -153,7 +184,11 @@ final class KeyboardViewController: UIInputViewController {
         let row = makeRow()
         row.distribution = .fill
 
-        let pageKey = makeSpecialKey(page == .letters ? "123" : "АБВ") { [weak self] in
+        let pageKey = makeIconKey(
+            page == .letters ? "textformat.123" : "textformat.abc",
+            accessibilityLabel: page == .letters ? "Цифры" : "Буквы",
+            style: .character
+        ) { [weak self] in
             guard let self else { return }
             self.page = self.page == .letters ? .symbols : .letters
             self.shifted = false
@@ -162,17 +197,15 @@ final class KeyboardViewController: UIInputViewController {
         row.addArrangedSubview(pageKey)
         bottomSideKeyConstraints.append(pageKey.widthAnchor.constraint(equalToConstant: 76))
 
-        let space = makeKey(title: "пробел", style: .character) { [weak self] in
+        let space = makeIconKey("space", accessibilityLabel: "Пробел", style: .character) { [weak self] in
             self?.insert(" ")
         }
-        space.titleLabel?.font = .systemFont(ofSize: 16)
         space.setContentHuggingPriority(.defaultLow, for: .horizontal)
         row.addArrangedSubview(space)
 
-        let enter = makeSpecialKey("ввод") { [weak self] in
+        let enter = makeIconKey("return", accessibilityLabel: "Ввод", style: .character) { [weak self] in
             self?.insert("\n")
         }
-        enter.titleLabel?.font = .systemFont(ofSize: 15)
         row.addArrangedSubview(enter)
         bottomSideKeyConstraints.append(enter.widthAnchor.constraint(equalToConstant: 76))
         NSLayoutConstraint.activate(bottomSideKeyConstraints)
@@ -185,29 +218,29 @@ final class KeyboardViewController: UIInputViewController {
         guard let returnKey else { return }
 
         returnKey.setImage(nil, for: .normal)
+        returnKey.setTitle(nil, for: .normal)
         let returnKeyType = textDocumentProxy.returnKeyType
         switch returnKeyType {
         case .search:
-            returnKey.setTitle(nil, for: .normal)
             returnKey.setImage(UIImage(systemName: "magnifyingglass"), for: .normal)
             returnKey.accessibilityLabel = "Найти"
         case .done:
-            returnKey.setTitle("готово", for: .normal)
+            returnKey.setImage(UIImage(systemName: "checkmark"), for: .normal)
             returnKey.accessibilityLabel = "Готово"
         case .go:
-            returnKey.setTitle("перейти", for: .normal)
+            returnKey.setImage(UIImage(systemName: "arrow.right"), for: .normal)
             returnKey.accessibilityLabel = "Перейти"
         case .next:
-            returnKey.setTitle("далее", for: .normal)
+            returnKey.setImage(UIImage(systemName: "arrow.right.to.line"), for: .normal)
             returnKey.accessibilityLabel = "Далее"
         case .send:
-            returnKey.setTitle("отправить", for: .normal)
+            returnKey.setImage(UIImage(systemName: "paperplane.fill"), for: .normal)
             returnKey.accessibilityLabel = "Отправить"
         default:
-            returnKey.setTitle("ввод", for: .normal)
+            returnKey.setImage(UIImage(systemName: "return"), for: .normal)
             returnKey.accessibilityLabel = "Ввод"
         }
-        returnKey.setActionStyle(returnKeyType != .default)
+        returnKey.setActionStyle(false)
     }
 
     private func makeCharacterKey(_ character: String) -> KeyboardButton {
@@ -219,6 +252,9 @@ final class KeyboardViewController: UIInputViewController {
         characterKeys.append((key, character))
 
         if variant(for: character) != nil {
+            key.pressBeganAction = { [weak self] in
+                self?.prepareVariantFeedback()
+            }
             key.longPressAction = { [weak self, weak key] recognizer in
                 guard let self, let key else { return }
                 self.handleVariantGesture(recognizer, character: character, from: key)
@@ -266,10 +302,12 @@ final class KeyboardViewController: UIInputViewController {
             let displayed = shifted ? character.uppercased() : character
             guard let variant = variant(for: character) else { return }
             showVariants([displayed, variant], from: key)
+            playVariantPresentationFeedback(at: recognizer.location(in: view))
+            variantSelectionFeedback.prepare()
         case .changed:
-            updateVariantSelection(at: recognizer.location(in: view))
+            updateVariantSelection(at: recognizer.location(in: view), emitFeedback: true)
         case .ended:
-            updateVariantSelection(at: recognizer.location(in: view))
+            updateVariantSelection(at: recognizer.location(in: view), emitFeedback: true)
             if let value = variantPopup?.selectedValue {
                 insert(value)
                 resetShiftIfNeeded()
@@ -285,11 +323,22 @@ final class KeyboardViewController: UIInputViewController {
     private func showVariants(_ variants: [String], from key: UIView) {
         dismissVariantPopup()
 
-        let popup = VariantPopup(values: variants)
         let keyFrame = key.convert(key.bounds, to: view)
-        let size = CGSize(width: CGFloat(variants.count) * 33 + 20, height: 60)
-        let x = min(max(4, keyFrame.midX - size.width / 2), view.bounds.width - size.width - 4)
+        let optionWidth = max(42, keyFrame.width)
+        let size = VariantPopup.preferredSize(optionCount: variants.count, optionWidth: optionWidth)
+        let opensLeft = keyFrame.midX > view.bounds.midX
+        let orderedVariants = opensLeft ? Array(variants.reversed()) : variants
+        let baseIndex = opensLeft ? orderedVariants.count - 1 : 0
+        let desiredX = keyFrame.midX
+            - VariantPopup.horizontalPadding
+            - (CGFloat(baseIndex) + 0.5) * optionWidth
+        let x = min(max(4, desiredX), view.bounds.width - size.width - 4)
         let y = keyFrame.minY - size.height - 4
+        let popup = VariantPopup(
+            values: orderedVariants,
+            selectedIndex: baseIndex,
+            optionWidth: optionWidth
+        )
         popup.frame = CGRect(origin: CGPoint(x: x, y: y), size: size)
         popup.layer.zPosition = 10
         view.addSubview(popup)
@@ -297,10 +346,41 @@ final class KeyboardViewController: UIInputViewController {
         variantPopup = popup
     }
 
-    private func updateVariantSelection(at location: CGPoint) {
+    private func updateVariantSelection(at location: CGPoint, emitFeedback: Bool) {
         guard let popup = variantPopup else { return }
         let localLocation = view.convert(location, to: popup)
-        popup.selectValue(at: localLocation)
+        guard popup.selectValue(at: localLocation) else { return }
+        if emitFeedback, popup.selectedValue != nil {
+            if #available(iOS 17.5, *) {
+                variantSelectionFeedback.selectionChanged(at: location)
+            } else {
+                variantSelectionFeedback.selectionChanged()
+            }
+            variantSelectionFeedback.prepare()
+        }
+    }
+
+    private func configureVariantFeedback(for feedbackView: UIView) {
+        if #available(iOS 17.5, *) {
+            variantPresentationFeedback = UIImpactFeedbackGenerator(style: .rigid, view: feedbackView)
+            variantSelectionFeedback = UISelectionFeedbackGenerator(view: feedbackView)
+        } else {
+            variantPresentationFeedback = UIImpactFeedbackGenerator(style: .rigid)
+            variantSelectionFeedback = UISelectionFeedbackGenerator()
+        }
+    }
+
+    private func prepareVariantFeedback() {
+        variantPresentationFeedback.prepare()
+        variantSelectionFeedback.prepare()
+    }
+
+    private func playVariantPresentationFeedback(at location: CGPoint) {
+        if #available(iOS 17.5, *) {
+            variantPresentationFeedback.impactOccurred(intensity: 0.85, at: location)
+        } else {
+            variantPresentationFeedback.impactOccurred(intensity: 0.85)
+        }
     }
 
     private func dismissVariantPopup() {
@@ -344,9 +424,10 @@ final class KeyboardViewController: UIInputViewController {
     private func makeIconKey(
         _ systemName: String,
         accessibilityLabel: String,
+        style: KeyboardButton.Style = .special,
         action: (() -> Void)? = nil
     ) -> KeyboardButton {
-        let key = KeyboardButton(style: .special)
+        let key = KeyboardButton(style: style)
         key.setImage(UIImage(systemName: systemName), for: .normal)
         key.accessibilityLabel = accessibilityLabel
         key.tapAction = action
@@ -489,6 +570,7 @@ private final class KeyboardButton: UIButton {
     }
 
     var tapAction: (() -> Void)?
+    var pressBeganAction: (() -> Void)?
     var longPressAction: ((UILongPressGestureRecognizer) -> Void)? {
         didSet { longPressRecognizer.isEnabled = longPressAction != nil }
     }
@@ -515,9 +597,11 @@ private final class KeyboardButton: UIButton {
             forImageIn: .normal
         )
         applyAppearance()
+        addTarget(self, action: #selector(pressed), for: .touchDown)
         addTarget(self, action: #selector(tapped), for: .touchUpInside)
 
-        longPressRecognizer.minimumPressDuration = 0.38
+        longPressRecognizer.minimumPressDuration = 0.42
+        longPressRecognizer.allowableMovement = 22
         longPressRecognizer.cancelsTouchesInView = true
         longPressRecognizer.isEnabled = false
         addGestureRecognizer(longPressRecognizer)
@@ -573,27 +657,45 @@ private final class KeyboardButton: UIButton {
         tapAction?()
     }
 
+    @objc private func pressed() {
+        pressBeganAction?()
+    }
+
     @objc private func longPressed(_ recognizer: UILongPressGestureRecognizer) {
-        if recognizer.state == .began {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        }
         longPressAction?(recognizer)
     }
 }
 
 private final class VariantPopup: UIView {
+    static let horizontalPadding: CGFloat = 8
+
+    private static let bodyHeight: CGFloat = 54
+    private static let verticalContentInset: CGFloat = 3
+    private static let selectionCornerRadius: CGFloat = 9
+
     private let values: [String]
     private let labels: [UILabel]
+    private let optionWidth: CGFloat
     private let selectionView = UIView()
-    private let backgroundView = UIView()
-    private var selectedIndex = 1
+    private let backgroundLayer = CAShapeLayer()
+    private var selectedIndex: Int?
 
     var selectedValue: String? {
-        values.indices.contains(selectedIndex) ? values[selectedIndex] : nil
+        guard let selectedIndex, values.indices.contains(selectedIndex) else { return nil }
+        return values[selectedIndex]
     }
 
-    init(values: [String]) {
+    static func preferredSize(optionCount: Int, optionWidth: CGFloat) -> CGSize {
+        CGSize(
+            width: horizontalPadding * 2 + CGFloat(optionCount) * optionWidth,
+            height: bodyHeight
+        )
+    }
+
+    init(values: [String], selectedIndex: Int, optionWidth: CGFloat) {
         self.values = values
+        self.selectedIndex = values.indices.contains(selectedIndex) ? selectedIndex : nil
+        self.optionWidth = optionWidth
         self.labels = values.map { value in
             let label = UILabel()
             label.text = value
@@ -606,25 +708,17 @@ private final class VariantPopup: UIView {
         super.init(frame: .zero)
 
         backgroundColor = .clear
-        layer.cornerRadius = 10
+        isOpaque = false
+        layer.insertSublayer(backgroundLayer, at: 0)
         layer.shadowColor = UIColor.black.cgColor
-        layer.shadowOpacity = 0.22
-        layer.shadowRadius = 5
+        layer.shadowOpacity = 0.24
+        layer.shadowRadius = 4
         layer.shadowOffset = CGSize(width: 0, height: 2)
-        backgroundView.backgroundColor = UIColor { traits in
-            traits.userInterfaceStyle == .dark
-                ? UIColor(white: 0.34, alpha: 0.98)
-                : UIColor(white: 1, alpha: 0.98)
-        }
-        backgroundView.layer.cornerRadius = 10
-        backgroundView.clipsToBounds = true
-        addSubview(backgroundView)
 
-        selectionView.backgroundColor = .systemBlue
-        selectionView.layer.cornerRadius = 11
+        selectionView.layer.cornerRadius = Self.selectionCornerRadius
         addSubview(selectionView)
         labels.forEach(addSubview)
-        updateHighlight()
+        applyAppearance()
     }
 
     required init?(coder: NSCoder) {
@@ -633,15 +727,21 @@ private final class VariantPopup: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        backgroundView.frame = bounds
-        let contentBounds = CGRect(x: 10, y: 6, width: bounds.width - 20, height: 48)
-        let optionWidth = contentBounds.width / CGFloat(labels.count)
-        selectionView.frame = CGRect(
-            x: contentBounds.minX + CGFloat(selectedIndex) * optionWidth,
-            y: contentBounds.minY,
-            width: optionWidth,
-            height: contentBounds.height
+        let bodyBounds = CGRect(x: 0, y: 0, width: bounds.width, height: Self.bodyHeight)
+        let contentBounds = CGRect(
+            x: Self.horizontalPadding,
+            y: Self.verticalContentInset,
+            width: CGFloat(labels.count) * optionWidth,
+            height: Self.bodyHeight - Self.verticalContentInset * 2
         )
+        if let selectedIndex {
+            selectionView.frame = CGRect(
+                x: contentBounds.minX + CGFloat(selectedIndex) * optionWidth,
+                y: contentBounds.minY,
+                width: optionWidth,
+                height: contentBounds.height
+            )
+        }
         for (index, label) in labels.enumerated() {
             label.frame = CGRect(
                 x: contentBounds.minX + CGFloat(index) * optionWidth,
@@ -650,25 +750,72 @@ private final class VariantPopup: UIView {
                 height: contentBounds.height
             )
         }
+
+        let path = UIBezierPath(roundedRect: bodyBounds, cornerRadius: 11)
+        backgroundLayer.frame = bounds
+        backgroundLayer.path = path.cgPath
+        layer.shadowPath = path.cgPath
     }
 
-    func selectValue(at location: CGPoint) {
-        guard bounds.insetBy(dx: -12, dy: -18).contains(location) else { return }
-        let contentBounds = CGRect(x: 10, y: 6, width: bounds.width - 20, height: 48)
-        let optionWidth = contentBounds.width / CGFloat(labels.count)
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        applyAppearance()
+    }
+
+    @discardableResult
+    func selectValue(at location: CGPoint) -> Bool {
+        let interactionBounds = CGRect(
+            x: -18,
+            y: -24,
+            width: bounds.width + 36,
+            height: bounds.height + 88
+        )
+        guard interactionBounds.contains(location) else {
+            return setSelectedIndex(nil)
+        }
+
+        let contentMinX = Self.horizontalPadding
+        let contentMaxX = contentMinX + CGFloat(labels.count) * optionWidth
+        guard location.x >= contentMinX - optionWidth / 2,
+              location.x <= contentMaxX + optionWidth / 2 else {
+            return setSelectedIndex(nil)
+        }
         let index = min(
-            max(Int((location.x - contentBounds.minX) / optionWidth), 0),
+            max(Int((location.x - contentMinX) / optionWidth), 0),
             labels.count - 1
         )
-        guard index != selectedIndex else { return }
+        return setSelectedIndex(index)
+    }
+
+    private func setSelectedIndex(_ index: Int?) -> Bool {
+        guard index != selectedIndex else { return false }
         selectedIndex = index
         updateHighlight()
         setNeedsLayout()
+        return true
     }
 
     private func updateHighlight() {
         for (index, label) in labels.enumerated() {
-            label.textColor = index == selectedIndex ? .white : .label
+            label.textColor = .label
+            label.font = .systemFont(ofSize: 22, weight: index == selectedIndex ? .semibold : .regular)
         }
+        selectionView.isHidden = selectedIndex == nil
+    }
+
+    private func applyAppearance() {
+        let popupColor = UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(white: 0.31, alpha: 0.99)
+                : UIColor(white: 0.98, alpha: 0.99)
+        }
+        let selectionColor = UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(white: 0.47, alpha: 0.96)
+                : UIColor(white: 0.82, alpha: 0.96)
+        }
+        backgroundLayer.fillColor = popupColor.resolvedColor(with: traitCollection).cgColor
+        selectionView.backgroundColor = selectionColor
+        updateHighlight()
     }
 }

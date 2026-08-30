@@ -25,7 +25,8 @@ struct ContentView: View {
                     instruction(1, "Откройте Настройки → Основные → Клавиатура")
                     instruction(2, "Выберите «Клавиатуры» и «Новые клавиатуры»")
                     instruction(3, "Добавьте «Русская+»")
-                    instruction(4, "Удерживайте о, у или ₽, чтобы ввести ө, ү или ₮")
+                    instruction(4, "Включите «Полный доступ», чтобы работала вибрация")
+                    instruction(5, "Удерживайте о, у или ₽, чтобы ввести ө, ү или ₮")
                 }
                 .padding(22)
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
