@@ -242,7 +242,7 @@ final class KeyboardViewController: UIInputViewController {
         }
         characterKeys.append((key, character))
 
-        if variant(for: character) != nil {
+        if !variants(for: character).isEmpty {
             key.pressBeganAction = { [weak self] in
                 self?.prepareVariantFeedback()
             }
@@ -263,17 +263,32 @@ final class KeyboardViewController: UIInputViewController {
         let displayed = shifted ? character.uppercased() : character
         key.setTitle(displayed, for: .normal)
         key.accessibilityLabel = displayed
-        key.accessibilityHint = variant(for: character).map { "Удерживайте для \($0)" }
+        let alternates = variants(for: character)
+        key.accessibilityHint = alternates.isEmpty
+            ? nil
+            : "Удерживайте для \(alternates.joined(separator: ", "))"
     }
 
-    private func variant(for character: String) -> String? {
+    private func variants(for character: String) -> [String] {
         switch character {
-        case "е": return shifted ? "Ё" : "ё"
-        case "о": return shifted ? "Ө" : "ө"
-        case "у": return shifted ? "Ү" : "ү"
-        case "ь": return shifted ? "Ъ" : "ъ"
-        case "₽": return "₮"
-        default: return nil
+        case "е": return [shifted ? "Ё" : "ё"]
+        case "о": return [shifted ? "Ө" : "ө"]
+        case "у": return [shifted ? "Ү" : "ү"]
+        case "ь": return [shifted ? "Ъ" : "ъ"]
+        case "0": return ["°"]
+        case "-": return ["–", "—", "•"]
+        case "/": return ["\\"]
+        case "₽": return ["$", "€", "£", "¥", "₮"]
+        case "&": return ["§"]
+        case "\"": return ["«", "»", "„", "“", "”"]
+        case ".": return ["…"]
+        case "?": return ["¿"]
+        case "!": return ["¡"]
+        case "'": return ["’", "‘", "`"]
+        case "#": return ["№"]
+        case "%": return ["‰"]
+        case "=": return ["≠", "≈"]
+        default: return []
         }
     }
 
@@ -291,8 +306,9 @@ final class KeyboardViewController: UIInputViewController {
         switch recognizer.state {
         case .began:
             let displayed = shifted ? character.uppercased() : character
-            guard let variant = variant(for: character) else { return }
-            showVariants([displayed, variant], from: key)
+            let alternates = variants(for: character)
+            guard !alternates.isEmpty else { return }
+            showVariants([displayed] + alternates, from: key)
             playVariantPresentationFeedback(at: recognizer.location(in: view))
             variantSelectionFeedback.prepare()
         case .changed:
