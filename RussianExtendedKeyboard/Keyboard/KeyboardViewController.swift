@@ -25,7 +25,6 @@ final class KeyboardViewController: UIInputViewController {
         [".", ",", "?", "!", "'"]
     ]
 
-    private let candidateBar = CandidateBarView()
     private let keyboardStack = UIStackView()
     private weak var layoutContainer: UIView?
     private var page: Page = .letters
@@ -35,10 +34,6 @@ final class KeyboardViewController: UIInputViewController {
     private var bottomSideKeyConstraints: [NSLayoutConstraint] = []
     private var appliedMetrics: KeyboardMetrics?
     private var keyboardHeightConstraint: NSLayoutConstraint!
-    private var candidateTopConstraint: NSLayoutConstraint!
-    private var candidateLeadingConstraint: NSLayoutConstraint!
-    private var candidateTrailingConstraint: NSLayoutConstraint!
-    private var candidateHeightConstraint: NSLayoutConstraint!
     private var keyboardTopConstraint: NSLayoutConstraint!
     private var keyboardLeadingConstraint: NSLayoutConstraint!
     private var keyboardTrailingConstraint: NSLayoutConstraint!
@@ -71,30 +66,19 @@ final class KeyboardViewController: UIInputViewController {
         layoutContainer = container
         configureVariantFeedback(for: container)
 
-        candidateBar.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(candidateBar)
-
         keyboardStack.axis = .vertical
         keyboardStack.distribution = .fillEqually
         keyboardStack.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(keyboardStack)
 
         keyboardHeightConstraint = container.heightAnchor.constraint(equalToConstant: 276)
-        candidateTopConstraint = candidateBar.topAnchor.constraint(equalTo: container.topAnchor)
-        candidateLeadingConstraint = candidateBar.leadingAnchor.constraint(equalTo: container.leadingAnchor)
-        candidateTrailingConstraint = candidateBar.trailingAnchor.constraint(equalTo: container.trailingAnchor)
-        candidateHeightConstraint = candidateBar.heightAnchor.constraint(equalToConstant: 50)
-        keyboardTopConstraint = keyboardStack.topAnchor.constraint(equalTo: candidateBar.bottomAnchor)
+        keyboardTopConstraint = keyboardStack.topAnchor.constraint(equalTo: container.topAnchor)
         keyboardLeadingConstraint = keyboardStack.leadingAnchor.constraint(equalTo: container.leadingAnchor)
         keyboardTrailingConstraint = keyboardStack.trailingAnchor.constraint(equalTo: container.trailingAnchor)
         keyboardBottomConstraint = keyboardStack.bottomAnchor.constraint(equalTo: container.bottomAnchor)
 
         NSLayoutConstraint.activate([
             keyboardHeightConstraint,
-            candidateTopConstraint,
-            candidateLeadingConstraint,
-            candidateTrailingConstraint,
-            candidateHeightConstraint,
             keyboardTopConstraint,
             keyboardLeadingConstraint,
             keyboardTrailingConstraint,
@@ -411,11 +395,7 @@ final class KeyboardViewController: UIInputViewController {
         appliedMetrics = metrics
 
         keyboardHeightConstraint.constant = metrics.keyboardHeight
-        candidateTopConstraint.constant = metrics.candidateTopInset
-        candidateLeadingConstraint.constant = metrics.candidateHorizontalInset
-        candidateTrailingConstraint.constant = -metrics.candidateHorizontalInset
-        candidateHeightConstraint.constant = metrics.candidateHeight
-        keyboardTopConstraint.constant = metrics.candidateToKeysSpacing
+        keyboardTopConstraint.constant = 0
         keyboardLeadingConstraint.constant = metrics.horizontalInset
         keyboardTrailingConstraint.constant = -metrics.horizontalInset
         keyboardBottomConstraint.constant = -metrics.bottomInset
@@ -456,11 +436,7 @@ final class KeyboardViewController: UIInputViewController {
 
 private struct KeyboardMetrics: Equatable {
     let keyboardHeight: CGFloat
-    let candidateTopInset: CGFloat
-    let candidateHeight: CGFloat
-    let candidateToKeysSpacing: CGFloat
     let bottomInset: CGFloat
-    let candidateHorizontalInset: CGFloat
     let horizontalInset: CGFloat
     let rowSpacing: CGFloat
     let keySpacing: CGFloat
@@ -470,12 +446,8 @@ private struct KeyboardMetrics: Equatable {
         let isCompact = traits.verticalSizeClass == .compact || width >= 560
 
         if isCompact {
-            keyboardHeight = 187
-            candidateTopInset = 0
-            candidateHeight = 20
-            candidateToKeysSpacing = 4
+            keyboardHeight = 163
             bottomInset = 4
-            candidateHorizontalInset = Self.clamp(width * 0.004, minimum: 2, maximum: 4)
             rowSpacing = 5
             keySpacing = Self.clamp(width * 0.007, minimum: 3, maximum: 5)
             horizontalInset = keySpacing
@@ -483,14 +455,9 @@ private struct KeyboardMetrics: Equatable {
             return
         }
 
-        // Measured from the native Russian keyplane on an iPhone 15 at 3x:
-        // 20 px edges, 18 px columns, 43 px top, 33 px rows, 34 px bottom.
-        keyboardHeight = 692 / 3
-        candidateTopInset = 0
-        candidateHeight = 43 / 3
-        candidateToKeysSpacing = 0
-        bottomInset = 34 / 3
-        candidateHorizontalInset = Self.clamp(width * 0.003125, minimum: 1, maximum: 2)
+        // Four native 43-pt rows separated by three 11-pt gaps.
+        keyboardHeight = 4 * 43 + 3 * 11
+        bottomInset = 0
         rowSpacing = 11
         keySpacing = 6
         horizontalInset = 20 / 3
@@ -499,76 +466,6 @@ private struct KeyboardMetrics: Equatable {
 
     private static func clamp(_ value: CGFloat, minimum: CGFloat, maximum: CGFloat) -> CGFloat {
         min(max(value, minimum), maximum)
-    }
-}
-
-private final class CandidateBarView: UIView {
-    var selectionHandler: ((String) -> Void)?
-
-    private let stack = UIStackView()
-    private var separators: [UIView] = []
-    private lazy var buttons: [UIButton] = (0..<3).map { index in
-        let button = UIButton(type: .system)
-        button.tag = index
-        button.titleLabel?.font = .systemFont(ofSize: 17)
-        button.titleLabel?.adjustsFontSizeToFitWidth = true
-        button.titleLabel?.minimumScaleFactor = 0.75
-        button.setTitleColor(.label, for: .normal)
-        button.addTarget(self, action: #selector(candidateSelected(_:)), for: .touchUpInside)
-        return button
-    }
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-
-        stack.axis = .horizontal
-        stack.distribution = .fillEqually
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(stack)
-        buttons.forEach(stack.addArrangedSubview)
-
-        for button in buttons.dropLast() {
-            let separator = UIView()
-            separator.backgroundColor = .separator
-            separator.translatesAutoresizingMaskIntoConstraints = false
-            button.addSubview(separator)
-            separators.append(separator)
-            NSLayoutConstraint.activate([
-                separator.topAnchor.constraint(equalTo: button.topAnchor, constant: 6),
-                separator.trailingAnchor.constraint(equalTo: button.trailingAnchor),
-                separator.bottomAnchor.constraint(equalTo: button.bottomAnchor, constant: -6),
-                separator.widthAnchor.constraint(equalToConstant: 1 / UIScreen.main.scale)
-            ])
-        }
-
-        NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: topAnchor),
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: trailingAnchor),
-            stack.bottomAnchor.constraint(equalTo: bottomAnchor)
-        ])
-
-        setCandidates([])
-    }
-
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    func setCandidates(_ candidates: [String]) {
-        separators.forEach { $0.isHidden = candidates.isEmpty }
-        for (index, button) in buttons.enumerated() {
-            let candidate = candidates.indices.contains(index) ? candidates[index] : nil
-            button.setTitle(candidate, for: .normal)
-            button.isUserInteractionEnabled = candidate != nil
-            button.isAccessibilityElement = candidate != nil
-            button.accessibilityLabel = candidate
-        }
-    }
-
-    @objc private func candidateSelected(_ sender: UIButton) {
-        guard let candidate = sender.title(for: .normal), !candidate.isEmpty else { return }
-        selectionHandler?(candidate)
     }
 }
 
