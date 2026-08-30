@@ -1,6 +1,14 @@
+import NaturalLanguage
 import UIKit
 
 final class KeyboardViewController: UIInputViewController {
+    private enum BackspaceTiming {
+        static let initialRepeatDelay: TimeInterval = 0.5
+        static let characterRepeatInterval: TimeInterval = 0.1
+        static let wordRepeatInterval: TimeInterval = 0.3
+        static let characterRepeatsBeforeWords = 20
+    }
+
     private enum Page {
         case letters
         case symbols
@@ -41,6 +49,9 @@ final class KeyboardViewController: UIInputViewController {
     private var variantPresentationFeedback: UIImpactFeedbackGenerator!
     private var variantSelectionFeedback: UISelectionFeedbackGenerator!
     private var variantPopup: VariantPopup?
+    private var backspaceRepeatTimer: Timer?
+    private var backspaceRepeatCount = 0
+    private let backspaceWordTokenizer = NLTokenizer(unit: .word)
     private weak var returnKey: KeyboardButton?
 
     override func viewDidLoad() {
@@ -52,6 +63,10 @@ final class KeyboardViewController: UIInputViewController {
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         updateLayoutMetrics()
+    }
+
+    deinit {
+        backspaceRepeatTimer?.invalidate()
     }
 
     private func configureRootView() {
@@ -162,11 +177,74 @@ final class KeyboardViewController: UIInputViewController {
         row.addArrangedSubview(leading)
         characters.forEach { row.addArrangedSubview(makeCharacterKey($0)) }
 
-        let delete = makeIconKey("delete.left", accessibilityLabel: "Удалить", style: .character) { [weak self] in
-            self?.textDocumentProxy.deleteBackward()
+        let delete = makeIconKey("delete.left", accessibilityLabel: "Удалить", style: .character)
+        delete.pressBeganAction = { [weak self] in
+            self?.beginBackspace()
+        }
+        delete.pressEndedAction = { [weak self] in
+            self?.endBackspace()
         }
         row.addArrangedSubview(delete)
         return row
+    }
+
+    private func beginBackspace() {
+        endBackspace()
+        textDocumentProxy.deleteBackward()
+        scheduleBackspaceRepeat(after: BackspaceTiming.initialRepeatDelay)
+    }
+
+    private func scheduleBackspaceRepeat(after delay: TimeInterval) {
+        let timer = Timer(timeInterval: delay, repeats: false) { [weak self] _ in
+            guard let self else { return }
+
+            if self.backspaceRepeatCount < BackspaceTiming.characterRepeatsBeforeWords {
+                self.textDocumentProxy.deleteBackward()
+                self.backspaceRepeatCount += 1
+                let nextDelay = self.backspaceRepeatCount
+                    == BackspaceTiming.characterRepeatsBeforeWords
+                    ? BackspaceTiming.wordRepeatInterval
+                    : BackspaceTiming.characterRepeatInterval
+                self.scheduleBackspaceRepeat(after: nextDelay)
+            } else {
+                let deletedWord = self.deletePreviousWord()
+                self.scheduleBackspaceRepeat(
+                    after: deletedWord
+                        ? BackspaceTiming.wordRepeatInterval
+                        : BackspaceTiming.characterRepeatInterval
+                )
+            }
+        }
+        backspaceRepeatTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    @discardableResult
+    private func deletePreviousWord() -> Bool {
+        guard let context = textDocumentProxy.documentContextBeforeInput,
+              !context.isEmpty else {
+            textDocumentProxy.deleteBackward()
+            return false
+        }
+
+        backspaceWordTokenizer.string = context
+        guard let tokenRange = backspaceWordTokenizer
+            .tokens(for: context.startIndex..<context.endIndex)
+            .last else {
+            textDocumentProxy.deleteBackward()
+            return false
+        }
+        let characterCount = context[tokenRange.lowerBound..<context.endIndex].count
+        for _ in 0..<characterCount {
+            textDocumentProxy.deleteBackward()
+        }
+        return true
+    }
+
+    private func endBackspace() {
+        backspaceRepeatTimer?.invalidate()
+        backspaceRepeatTimer = nil
+        backspaceRepeatCount = 0
     }
 
     private func makeBottomRow() -> UIView {
@@ -496,6 +574,7 @@ private final class KeyboardButton: UIButton {
 
     var tapAction: (() -> Void)?
     var pressBeganAction: (() -> Void)?
+    var pressEndedAction: (() -> Void)?
     var longPressAction: ((UILongPressGestureRecognizer) -> Void)? {
         didSet { longPressRecognizer.isEnabled = longPressAction != nil }
     }
@@ -524,6 +603,11 @@ private final class KeyboardButton: UIButton {
         applyAppearance()
         addTarget(self, action: #selector(pressed), for: .touchDown)
         addTarget(self, action: #selector(tapped), for: .touchUpInside)
+        addTarget(
+            self,
+            action: #selector(pressEnded),
+            for: [.touchUpInside, .touchUpOutside, .touchCancel, .touchDragExit]
+        )
 
         longPressRecognizer.minimumPressDuration = 0.42
         longPressRecognizer.allowableMovement = 22
@@ -622,6 +706,10 @@ private final class KeyboardButton: UIButton {
 
     @objc private func pressed() {
         pressBeganAction?()
+    }
+
+    @objc private func pressEnded() {
+        pressEndedAction?()
     }
 
     @objc private func longPressed(_ recognizer: UILongPressGestureRecognizer) {
