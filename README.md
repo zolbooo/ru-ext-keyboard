@@ -15,5 +15,12 @@ Cyrillic variants:
 4. Open **Settings → General → Keyboard → Keyboards → Add New Keyboard**.
 5. Choose **Русская+**, then switch to it using the globe key.
 
-Full Access is not requested or required. All text entry stays inside Apple's
-keyboard input pipeline.
+Full Access is optional and is used only to enable keyboard haptic feedback.
+The app and keyboard contain no networking code and do not collect or transmit
+typed text.
+
+## Distribution
+
+`main` is the TestFlight branch and `production` is the App Store release
+branch. See [the Xcode Cloud workflow guide](docs/XCODE_CLOUD.md) for setup,
+versioning, promotion, and branch-protection details.
