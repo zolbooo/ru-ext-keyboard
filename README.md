@@ -24,7 +24,7 @@ typed text.
 - `main` → **Main — TestFlight**: clean Release archive, **TestFlight
   (Internal Testing Only)**, then distribute to the internal tester group.
 - `production` → **Production — App Store**: clean Release archive,
-  **TestFlight and App Store**, then upload to App Store Connect.
+  **App Store Connect** preparation, then release from App Store Connect.
 
 Configure both workflows from Xcode's Report navigator using the shared
 `RussianExtendedKeyboard` scheme. Promote releases by merging `main` into
