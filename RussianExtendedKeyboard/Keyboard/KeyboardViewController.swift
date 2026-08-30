@@ -7,7 +7,7 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private let letterRows = [
-        ["й", "ц", "у", "к", "е", "н", "г", "ш", "щ", "з", "х", "ъ"],
+        ["й", "ц", "у", "к", "е", "н", "г", "ш", "щ", "з", "х"],
         ["ф", "ы", "в", "а", "п", "р", "о", "л", "д", "ж", "э"],
         ["я", "ч", "с", "м", "и", "т", "ь", "б", "ю"]
     ]
@@ -18,10 +18,24 @@ final class KeyboardViewController: UIInputViewController {
         [".", ",", "?", "!", "'", "+", "=", "%"]
     ]
 
+    private let candidateBar = CandidateBarView()
     private let keyboardStack = UIStackView()
+    private weak var layoutContainer: UIView?
     private var page: Page = .letters
     private var shifted = false
     private var characterKeys: [(button: KeyboardButton, character: String)] = []
+    private var rowStacks: [UIStackView] = []
+    private var bottomSideKeyConstraints: [NSLayoutConstraint] = []
+    private var appliedMetrics: KeyboardMetrics?
+    private var keyboardHeightConstraint: NSLayoutConstraint!
+    private var candidateTopConstraint: NSLayoutConstraint!
+    private var candidateLeadingConstraint: NSLayoutConstraint!
+    private var candidateTrailingConstraint: NSLayoutConstraint!
+    private var candidateHeightConstraint: NSLayoutConstraint!
+    private var keyboardTopConstraint: NSLayoutConstraint!
+    private var keyboardLeadingConstraint: NSLayoutConstraint!
+    private var keyboardTrailingConstraint: NSLayoutConstraint!
+    private var keyboardBottomConstraint: NSLayoutConstraint!
     private var variantPopup: VariantPopup?
     private weak var returnKey: KeyboardButton?
 
@@ -29,6 +43,11 @@ final class KeyboardViewController: UIInputViewController {
         super.viewDidLoad()
         configureRootView()
         rebuildKeyboard()
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        updateLayoutMetrics()
     }
 
     private func configureRootView() {
@@ -39,20 +58,37 @@ final class KeyboardViewController: UIInputViewController {
         inputView?.isOpaque = false
         inputView?.clipsToBounds = false
 
+        guard let container = inputView ?? view else { return }
+        layoutContainer = container
+
+        candidateBar.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(candidateBar)
+
         keyboardStack.axis = .vertical
-        keyboardStack.spacing = 8
         keyboardStack.distribution = .fillEqually
         keyboardStack.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(keyboardStack)
+        container.addSubview(keyboardStack)
 
-        let height = view.heightAnchor.constraint(equalToConstant: 276)
-        height.priority = .defaultHigh
+        keyboardHeightConstraint = container.heightAnchor.constraint(equalToConstant: 276)
+        candidateTopConstraint = candidateBar.topAnchor.constraint(equalTo: container.topAnchor)
+        candidateLeadingConstraint = candidateBar.leadingAnchor.constraint(equalTo: container.leadingAnchor)
+        candidateTrailingConstraint = candidateBar.trailingAnchor.constraint(equalTo: container.trailingAnchor)
+        candidateHeightConstraint = candidateBar.heightAnchor.constraint(equalToConstant: 50)
+        keyboardTopConstraint = keyboardStack.topAnchor.constraint(equalTo: candidateBar.bottomAnchor)
+        keyboardLeadingConstraint = keyboardStack.leadingAnchor.constraint(equalTo: container.leadingAnchor)
+        keyboardTrailingConstraint = keyboardStack.trailingAnchor.constraint(equalTo: container.trailingAnchor)
+        keyboardBottomConstraint = keyboardStack.bottomAnchor.constraint(equalTo: container.bottomAnchor)
+
         NSLayoutConstraint.activate([
-            keyboardStack.topAnchor.constraint(equalTo: view.topAnchor, constant: 66),
-            keyboardStack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 4),
-            keyboardStack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -4),
-            keyboardStack.heightAnchor.constraint(equalToConstant: 202),
-            height
+            keyboardHeightConstraint,
+            candidateTopConstraint,
+            candidateLeadingConstraint,
+            candidateTrailingConstraint,
+            candidateHeightConstraint,
+            keyboardTopConstraint,
+            keyboardLeadingConstraint,
+            keyboardTrailingConstraint,
+            keyboardBottomConstraint
         ])
     }
 
@@ -64,6 +100,8 @@ final class KeyboardViewController: UIInputViewController {
     private func rebuildKeyboard() {
         dismissVariantPopup()
         characterKeys.removeAll()
+        rowStacks.removeAll()
+        bottomSideKeyConstraints.removeAll()
         keyboardStack.arrangedSubviews.forEach {
             keyboardStack.removeArrangedSubview($0)
             $0.removeFromSuperview()
@@ -71,31 +109,20 @@ final class KeyboardViewController: UIInputViewController {
 
         let rows = page == .letters ? letterRows : symbolRows
         keyboardStack.addArrangedSubview(makeCharacterRow(rows[0]))
-        keyboardStack.addArrangedSubview(makeCharacterRow(rows[1], horizontalInset: 14))
+        keyboardStack.addArrangedSubview(makeCharacterRow(rows[1]))
         keyboardStack.addArrangedSubview(makeThirdRow(rows[2]))
         keyboardStack.addArrangedSubview(makeBottomRow())
+        updateLayoutMetrics(force: true)
     }
 
-    private func makeCharacterRow(_ characters: [String], horizontalInset: CGFloat = 0) -> UIView {
+    private func makeCharacterRow(_ characters: [String]) -> UIView {
         let row = makeRow()
         characters.forEach { row.addArrangedSubview(makeCharacterKey($0)) }
-
-        if horizontalInset == 0 { return row }
-        let container = UIView()
-        row.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(row)
-        NSLayoutConstraint.activate([
-            row.topAnchor.constraint(equalTo: container.topAnchor),
-            row.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-            row.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: horizontalInset),
-            row.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -horizontalInset)
-        ])
-        return container
+        return row
     }
 
     private func makeThirdRow(_ characters: [String]) -> UIView {
         let row = makeRow()
-        row.distribution = .fill
 
         let leading = page == .letters
             ? makeIconKey("shift", accessibilityLabel: "Сдвиг")
@@ -113,17 +140,12 @@ final class KeyboardViewController: UIInputViewController {
             }
         }
         row.addArrangedSubview(leading)
-        leading.widthAnchor.constraint(equalTo: row.widthAnchor, multiplier: 0.11).isActive = true
-
-        let characterRow = makeRow()
-        characters.forEach { characterRow.addArrangedSubview(makeCharacterKey($0)) }
-        row.addArrangedSubview(characterRow)
+        characters.forEach { row.addArrangedSubview(makeCharacterKey($0)) }
 
         let delete = makeIconKey("delete.left", accessibilityLabel: "Удалить") { [weak self] in
             self?.textDocumentProxy.deleteBackward()
         }
         row.addArrangedSubview(delete)
-        delete.widthAnchor.constraint(equalTo: row.widthAnchor, multiplier: 0.11).isActive = true
         return row
     }
 
@@ -138,7 +160,7 @@ final class KeyboardViewController: UIInputViewController {
             self.rebuildKeyboard()
         }
         row.addArrangedSubview(pageKey)
-        pageKey.widthAnchor.constraint(equalTo: row.widthAnchor, multiplier: 0.24).isActive = true
+        bottomSideKeyConstraints.append(pageKey.widthAnchor.constraint(equalToConstant: 76))
 
         let space = makeKey(title: "пробел", style: .character) { [weak self] in
             self?.insert(" ")
@@ -152,7 +174,8 @@ final class KeyboardViewController: UIInputViewController {
         }
         enter.titleLabel?.font = .systemFont(ofSize: 15)
         row.addArrangedSubview(enter)
-        enter.widthAnchor.constraint(equalTo: row.widthAnchor, multiplier: 0.24).isActive = true
+        bottomSideKeyConstraints.append(enter.widthAnchor.constraint(equalToConstant: 76))
+        NSLayoutConstraint.activate(bottomSideKeyConstraints)
         returnKey = enter
         updateReturnKey()
         return row
@@ -288,9 +311,30 @@ final class KeyboardViewController: UIInputViewController {
     private func makeRow() -> UIStackView {
         let row = UIStackView()
         row.axis = .horizontal
-        row.spacing = 5
         row.distribution = .fillEqually
+        rowStacks.append(row)
         return row
+    }
+
+    private func updateLayoutMetrics(force: Bool = false) {
+        let containerWidth = layoutContainer?.bounds.width ?? view.bounds.width
+        let width = containerWidth > 0 ? containerWidth : 320
+        let metrics = KeyboardMetrics(width: width, traits: traitCollection)
+        guard force || metrics != appliedMetrics else { return }
+        appliedMetrics = metrics
+
+        keyboardHeightConstraint.constant = metrics.keyboardHeight
+        candidateTopConstraint.constant = metrics.candidateTopInset
+        candidateLeadingConstraint.constant = metrics.horizontalInset
+        candidateTrailingConstraint.constant = -metrics.horizontalInset
+        candidateHeightConstraint.constant = metrics.candidateHeight
+        keyboardTopConstraint.constant = metrics.candidateToKeysSpacing
+        keyboardLeadingConstraint.constant = metrics.horizontalInset
+        keyboardTrailingConstraint.constant = -metrics.horizontalInset
+        keyboardBottomConstraint.constant = -metrics.bottomInset
+        keyboardStack.spacing = metrics.rowSpacing
+        rowStacks.forEach { $0.spacing = metrics.keySpacing }
+        bottomSideKeyConstraints.forEach { $0.constant = metrics.bottomSideKeyWidth }
     }
 
     private func makeSpecialKey(_ title: String, action: (() -> Void)?) -> KeyboardButton {
@@ -320,6 +364,122 @@ final class KeyboardViewController: UIInputViewController {
         textDocumentProxy.insertText(text)
     }
 
+}
+
+private struct KeyboardMetrics: Equatable {
+    let keyboardHeight: CGFloat
+    let candidateTopInset: CGFloat
+    let candidateHeight: CGFloat
+    let candidateToKeysSpacing: CGFloat
+    let bottomInset: CGFloat
+    let horizontalInset: CGFloat
+    let rowSpacing: CGFloat
+    let keySpacing: CGFloat
+    let bottomSideKeyWidth: CGFloat
+
+    init(width: CGFloat, traits: UITraitCollection) {
+        let isCompact = traits.verticalSizeClass == .compact || width >= 560
+
+        if isCompact {
+            keyboardHeight = 207
+            candidateTopInset = 2
+            candidateHeight = 38
+            candidateToKeysSpacing = 4
+            bottomInset = 4
+            horizontalInset = Self.clamp(width * 0.004, minimum: 2, maximum: 4)
+            rowSpacing = 5
+            keySpacing = Self.clamp(width * 0.007, minimum: 3, maximum: 5)
+            bottomSideKeyWidth = (width - 2 * horizontalInset) * 0.18
+            return
+        }
+
+        // The decoded iPhone templates grow from a 320-point, 42-point-row
+        // keyplane to taller Choco/Truffle keyplanes. Interpolate within that
+        // family instead of locking every device to one set of pixel values.
+        let templateWidth = Self.clamp(width, minimum: 320, maximum: 414)
+        let progress = (templateWidth - 320) / (414 - 320)
+
+        keyboardHeight = (276 + 12 * progress).rounded()
+        candidateTopInset = 4
+        candidateHeight = (50 + 6 * progress).rounded()
+        candidateToKeysSpacing = 8
+        bottomInset = 8
+        horizontalInset = Self.clamp(width * 0.003125, minimum: 1, maximum: 2)
+        rowSpacing = (12 - 4 * progress).rounded()
+        keySpacing = Self.clamp(width * 0.009, minimum: 3, maximum: 4)
+        bottomSideKeyWidth = (width - 2 * horizontalInset) * 0.24
+    }
+
+    private static func clamp(_ value: CGFloat, minimum: CGFloat, maximum: CGFloat) -> CGFloat {
+        min(max(value, minimum), maximum)
+    }
+}
+
+private final class CandidateBarView: UIView {
+    var selectionHandler: ((String) -> Void)?
+
+    private let stack = UIStackView()
+    private lazy var buttons: [UIButton] = (0..<3).map { index in
+        let button = UIButton(type: .system)
+        button.tag = index
+        button.titleLabel?.font = .systemFont(ofSize: 17)
+        button.titleLabel?.adjustsFontSizeToFitWidth = true
+        button.titleLabel?.minimumScaleFactor = 0.75
+        button.setTitleColor(.label, for: .normal)
+        button.addTarget(self, action: #selector(candidateSelected(_:)), for: .touchUpInside)
+        return button
+    }
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+
+        stack.axis = .horizontal
+        stack.distribution = .fillEqually
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+        buttons.forEach(stack.addArrangedSubview)
+
+        for button in buttons.dropLast() {
+            let separator = UIView()
+            separator.backgroundColor = .separator
+            separator.translatesAutoresizingMaskIntoConstraints = false
+            button.addSubview(separator)
+            NSLayoutConstraint.activate([
+                separator.topAnchor.constraint(equalTo: button.topAnchor, constant: 10),
+                separator.trailingAnchor.constraint(equalTo: button.trailingAnchor),
+                separator.bottomAnchor.constraint(equalTo: button.bottomAnchor, constant: -10),
+                separator.widthAnchor.constraint(equalToConstant: 1 / UIScreen.main.scale)
+            ])
+        }
+
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: topAnchor),
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor),
+            stack.bottomAnchor.constraint(equalTo: bottomAnchor)
+        ])
+
+        setCandidates([])
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func setCandidates(_ candidates: [String]) {
+        for (index, button) in buttons.enumerated() {
+            let candidate = candidates.indices.contains(index) ? candidates[index] : nil
+            button.setTitle(candidate, for: .normal)
+            button.isUserInteractionEnabled = candidate != nil
+            button.isAccessibilityElement = candidate != nil
+            button.accessibilityLabel = candidate
+        }
+    }
+
+    @objc private func candidateSelected(_ sender: UIButton) {
+        guard let candidate = sender.title(for: .normal), !candidate.isEmpty else { return }
+        selectionHandler?(candidate)
+    }
 }
 
 private final class KeyboardButton: UIButton {
