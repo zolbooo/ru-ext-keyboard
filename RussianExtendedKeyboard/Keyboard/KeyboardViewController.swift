@@ -261,6 +261,9 @@ final class KeyboardViewController: UIInputViewController {
 
     private func updateCharacterKey(_ key: KeyboardButton, character: String) {
         let displayed = shifted ? character.uppercased() : character
+        if page == .letters {
+            key.setNativeLetterStyle(shifted: shifted)
+        }
         key.setTitle(displayed, for: .normal)
         key.accessibilityLabel = displayed
         let alternates = variants(for: character)
@@ -550,6 +553,18 @@ private final class KeyboardButton: UIButton {
     func setSelectedStyle(_ enabled: Bool) {
         usesSelectedStyle = enabled
         applyAppearance()
+    }
+
+    func setNativeLetterStyle(shifted: Bool) {
+        let fontSize: CGFloat = shifted ? 22 : 25
+        let verticalOffset: CGFloat = shifted ? -1 : -2
+        titleLabel?.font = .systemFont(ofSize: fontSize, weight: .regular)
+        titleEdgeInsets = UIEdgeInsets(
+            top: verticalOffset,
+            left: 0,
+            bottom: -verticalOffset,
+            right: 0
+        )
     }
 
     private func applyAppearance() {
