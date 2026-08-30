@@ -147,9 +147,14 @@ final class KeyboardViewController: UIInputViewController {
         case .letters:
             leading = makeIconKey("shift", accessibilityLabel: "Сдвиг", style: .character)
         case .symbols:
-            leading = makeIconKey("number", accessibilityLabel: "Дополнительные символы", style: .character)
+            leading = makeKey(title: "#+=", style: .character, action: nil)
+            leading.accessibilityLabel = "Дополнительные символы"
         case .moreSymbols:
-            leading = makeIconKey("textformat.123", accessibilityLabel: "Цифры", style: .character)
+            leading = makeKey(title: "123", style: .character, action: nil)
+            leading.accessibilityLabel = "Цифры"
+        }
+        if page != .letters {
+            leading.titleLabel?.font = .systemFont(ofSize: 16)
         }
         leading.tapAction = { [weak self, weak leading] in
             guard let self else { return }
@@ -184,9 +189,8 @@ final class KeyboardViewController: UIInputViewController {
         let row = makeRow()
         row.distribution = .fill
 
-        let pageKey = makeIconKey(
-            page == .letters ? "textformat.123" : "textformat.abc",
-            accessibilityLabel: page == .letters ? "Цифры" : "Буквы",
+        let pageKey = makeKey(
+            title: page == .letters ? "123" : "АБВ",
             style: .character
         ) { [weak self] in
             guard let self else { return }
@@ -194,12 +198,15 @@ final class KeyboardViewController: UIInputViewController {
             self.shifted = false
             self.rebuildKeyboard()
         }
+        pageKey.accessibilityLabel = page == .letters ? "Цифры" : "Буквы"
+        pageKey.titleLabel?.font = .systemFont(ofSize: 16)
         row.addArrangedSubview(pageKey)
         bottomSideKeyConstraints.append(pageKey.widthAnchor.constraint(equalToConstant: 76))
 
-        let space = makeIconKey("space", accessibilityLabel: "Пробел", style: .character) { [weak self] in
+        let space = makeKey(title: "", style: .character) { [weak self] in
             self?.insert(" ")
         }
+        space.accessibilityLabel = "Пробел"
         space.setContentHuggingPriority(.defaultLow, for: .horizontal)
         row.addArrangedSubview(space)
 
