@@ -590,9 +590,10 @@ private struct KeyboardMetrics: Equatable {
         let isCompact = traits.verticalSizeClass == .compact || width >= 560
 
         if isCompact {
+            // Preserve the existing key area while adding clearance below it.
             topInset = 2
-            keyboardHeight = 163 + topInset
-            bottomInset = 4
+            bottomInset = 8
+            keyboardHeight = 159 + topInset + bottomInset
             rowSpacing = 5
             keySpacing = Self.clamp(width * 0.007, minimum: 3, maximum: 5)
             horizontalInset = keySpacing
@@ -603,8 +604,8 @@ private struct KeyboardMetrics: Equatable {
 
         // Four native 43-pt rows separated by three 11-pt gaps.
         topInset = 7
-        keyboardHeight = 4 * 43 + 3 * 11 + topInset
-        bottomInset = 0
+        bottomInset = 4
+        keyboardHeight = 4 * 43 + 3 * 11 + topInset + bottomInset
         rowSpacing = 11
         keySpacing = 6
         horizontalInset = 20 / 3
