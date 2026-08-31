@@ -705,12 +705,7 @@ private final class KeyboardButton: UIButton {
         let fontSize: CGFloat = shifted ? 22 : 25
         let verticalOffset: CGFloat = shifted ? -1 : -2
         titleLabel?.font = .systemFont(ofSize: fontSize, weight: .regular)
-        titleEdgeInsets = UIEdgeInsets(
-            top: verticalOffset,
-            left: 0,
-            bottom: -verticalOffset,
-            right: 0
-        )
+        titleLabel?.transform = CGAffineTransform(translationX: 0, y: verticalOffset)
     }
 
     func beginRoutedHighlight() {
