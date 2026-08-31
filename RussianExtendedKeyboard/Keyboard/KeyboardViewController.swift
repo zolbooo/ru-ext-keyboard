@@ -522,7 +522,7 @@ final class KeyboardViewController: UIInputViewController {
         appliedMetrics = metrics
 
         keyboardHeightConstraint.constant = metrics.keyboardHeight
-        keyboardTopConstraint.constant = 0
+        keyboardTopConstraint.constant = metrics.topInset
         keyboardLeadingConstraint.constant = metrics.horizontalInset
         keyboardTrailingConstraint.constant = -metrics.horizontalInset
         keyboardBottomConstraint.constant = -metrics.bottomInset
@@ -563,6 +563,7 @@ final class KeyboardViewController: UIInputViewController {
 
 private struct KeyboardMetrics: Equatable {
     let keyboardHeight: CGFloat
+    let topInset: CGFloat
     let bottomInset: CGFloat
     let horizontalInset: CGFloat
     let rowSpacing: CGFloat
@@ -573,7 +574,8 @@ private struct KeyboardMetrics: Equatable {
         let isCompact = traits.verticalSizeClass == .compact || width >= 560
 
         if isCompact {
-            keyboardHeight = 163
+            topInset = 2
+            keyboardHeight = 163 + topInset
             bottomInset = 4
             rowSpacing = 5
             keySpacing = Self.clamp(width * 0.007, minimum: 3, maximum: 5)
@@ -583,7 +585,8 @@ private struct KeyboardMetrics: Equatable {
         }
 
         // Four native 43-pt rows separated by three 11-pt gaps.
-        keyboardHeight = 4 * 43 + 3 * 11
+        topInset = 7
+        keyboardHeight = 4 * 43 + 3 * 11 + topInset
         bottomInset = 0
         rowSpacing = 11
         keySpacing = 6
