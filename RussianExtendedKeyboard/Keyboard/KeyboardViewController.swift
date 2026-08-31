@@ -41,6 +41,7 @@ final class KeyboardViewController: UIInputViewController {
     private var characterKeys: [(button: KeyboardButton, character: String)] = []
     private var rowStacks: [UIStackView] = []
     private var bottomSideKeyConstraints: [NSLayoutConstraint] = []
+    private var bottomUtilityKeyConstraint: NSLayoutConstraint?
     private var appliedMetrics: KeyboardMetrics?
     private var keyboardHeightConstraint: NSLayoutConstraint!
     private var keyboardTopConstraint: NSLayoutConstraint!
@@ -129,6 +130,7 @@ final class KeyboardViewController: UIInputViewController {
         characterKeys.removeAll()
         rowStacks.removeAll()
         bottomSideKeyConstraints.removeAll()
+        bottomUtilityKeyConstraint = nil
         keyboardStack.arrangedSubviews.forEach {
             keyboardStack.removeArrangedSubview($0)
             $0.removeFromSuperview()
@@ -283,6 +285,18 @@ final class KeyboardViewController: UIInputViewController {
         row.addArrangedSubview(pageKey)
         bottomSideKeyConstraints.append(pageKey.widthAnchor.constraint(equalToConstant: 76))
 
+        let nextKeyboard = makeIconKey(
+            "globe",
+            accessibilityLabel: "Следующая клавиатура",
+            style: .character
+        ) { [weak self] in
+            self?.advanceToNextInputMode()
+        }
+        nextKeyboard.accessibilityHint = "Переключает на следующую установленную клавиатуру"
+        row.addArrangedSubview(nextKeyboard)
+        let utilityConstraint = nextKeyboard.widthAnchor.constraint(equalToConstant: 42)
+        bottomUtilityKeyConstraint = utilityConstraint
+
         let space = makeKey(title: "", style: .character) { [weak self] in
             self?.insert(" ")
         }
@@ -295,7 +309,7 @@ final class KeyboardViewController: UIInputViewController {
         }
         row.addArrangedSubview(enter)
         bottomSideKeyConstraints.append(enter.widthAnchor.constraint(equalToConstant: 76))
-        NSLayoutConstraint.activate(bottomSideKeyConstraints)
+        NSLayoutConstraint.activate(bottomSideKeyConstraints + [utilityConstraint])
         returnKey = enter
         updateReturnKey()
         return row
@@ -529,6 +543,7 @@ final class KeyboardViewController: UIInputViewController {
         keyboardStack.spacing = metrics.rowSpacing
         rowStacks.forEach { $0.spacing = metrics.keySpacing }
         bottomSideKeyConstraints.forEach { $0.constant = metrics.bottomSideKeyWidth }
+        bottomUtilityKeyConstraint?.constant = metrics.bottomUtilityKeyWidth
     }
 
     private func makeSpecialKey(_ title: String, action: (() -> Void)?) -> KeyboardButton {
@@ -569,6 +584,7 @@ private struct KeyboardMetrics: Equatable {
     let rowSpacing: CGFloat
     let keySpacing: CGFloat
     let bottomSideKeyWidth: CGFloat
+    let bottomUtilityKeyWidth: CGFloat
 
     init(width: CGFloat, traits: UITraitCollection) {
         let isCompact = traits.verticalSizeClass == .compact || width >= 560
@@ -581,6 +597,7 @@ private struct KeyboardMetrics: Equatable {
             keySpacing = Self.clamp(width * 0.007, minimum: 3, maximum: 5)
             horizontalInset = keySpacing
             bottomSideKeyWidth = (width - 2 * horizontalInset) * 0.18
+            bottomUtilityKeyWidth = Self.clamp(width * 0.08, minimum: 42, maximum: 60)
             return
         }
 
@@ -592,6 +609,7 @@ private struct KeyboardMetrics: Equatable {
         keySpacing = 6
         horizontalInset = 20 / 3
         bottomSideKeyWidth = (width - 2 * horizontalInset) * 0.24
+        bottomUtilityKeyWidth = Self.clamp(width * 0.12, minimum: 42, maximum: 60)
     }
 
     private static func clamp(_ value: CGFloat, minimum: CGFloat, maximum: CGFloat) -> CGFloat {
