@@ -285,17 +285,18 @@ final class KeyboardViewController: UIInputViewController {
         row.addArrangedSubview(pageKey)
         bottomSideKeyConstraints.append(pageKey.widthAnchor.constraint(equalToConstant: 76))
 
-        let nextKeyboard = makeIconKey(
-            "globe",
-            accessibilityLabel: "Следующая клавиатура",
-            style: .character
-        ) { [weak self] in
-            self?.advanceToNextInputMode()
+        if needsInputModeSwitchKey {
+            let nextKeyboard = makeIconKey(
+                "globe",
+                accessibilityLabel: "Следующая клавиатура",
+                style: .character
+            ) { [weak self] in
+                self?.advanceToNextInputMode()
+            }
+            nextKeyboard.accessibilityHint = "Переключает на следующую установленную клавиатуру"
+            row.addArrangedSubview(nextKeyboard)
+            bottomUtilityKeyConstraint = nextKeyboard.widthAnchor.constraint(equalToConstant: 42)
         }
-        nextKeyboard.accessibilityHint = "Переключает на следующую установленную клавиатуру"
-        row.addArrangedSubview(nextKeyboard)
-        let utilityConstraint = nextKeyboard.widthAnchor.constraint(equalToConstant: 42)
-        bottomUtilityKeyConstraint = utilityConstraint
 
         let space = makeKey(title: "", style: .character) { [weak self] in
             self?.insert(" ")
@@ -309,7 +310,7 @@ final class KeyboardViewController: UIInputViewController {
         }
         row.addArrangedSubview(enter)
         bottomSideKeyConstraints.append(enter.widthAnchor.constraint(equalToConstant: 76))
-        NSLayoutConstraint.activate(bottomSideKeyConstraints + [utilityConstraint])
+        NSLayoutConstraint.activate(bottomSideKeyConstraints + [bottomUtilityKeyConstraint].compactMap { $0 })
         returnKey = enter
         updateReturnKey()
         return row
