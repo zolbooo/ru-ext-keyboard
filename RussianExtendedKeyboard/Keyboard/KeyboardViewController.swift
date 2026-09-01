@@ -76,16 +76,11 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func configureRootView() {
-        let keyboardBackground = UIColor { traits in
-            traits.userInterfaceStyle == .dark
-                ? UIColor(white: 0.12, alpha: 1)
-                : UIColor(red: 227 / 255, green: 228 / 255, blue: 230 / 255, alpha: 1)
-        }
-        view.backgroundColor = keyboardBackground
-        view.isOpaque = true
+        view.backgroundColor = .clear
+        view.isOpaque = false
         view.clipsToBounds = false
-        inputView?.backgroundColor = keyboardBackground
-        inputView?.isOpaque = true
+        inputView?.backgroundColor = .clear
+        inputView?.isOpaque = false
         inputView?.clipsToBounds = false
 
         guard let container = inputView ?? view else { return }
