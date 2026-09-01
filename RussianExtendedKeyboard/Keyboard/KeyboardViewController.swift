@@ -41,7 +41,7 @@ final class KeyboardViewController: UIInputViewController {
     private var characterKeys: [(button: KeyboardButton, character: String)] = []
     private var rowStacks: [UIStackView] = []
     private var bottomSideKeyConstraints: [NSLayoutConstraint] = []
-    private var bottomUtilityKeyConstraint: NSLayoutConstraint?
+    private var bottomUtilityKeyConstraints: [NSLayoutConstraint] = []
     private var appliedMetrics: KeyboardMetrics?
     private var keyboardHeightConstraint: NSLayoutConstraint!
     private var keyboardTopConstraint: NSLayoutConstraint!
@@ -76,11 +76,16 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func configureRootView() {
-        view.backgroundColor = .clear
-        view.isOpaque = false
+        let keyboardBackground = UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(white: 0.12, alpha: 1)
+                : UIColor(red: 227 / 255, green: 228 / 255, blue: 230 / 255, alpha: 1)
+        }
+        view.backgroundColor = keyboardBackground
+        view.isOpaque = true
         view.clipsToBounds = false
-        inputView?.backgroundColor = .clear
-        inputView?.isOpaque = false
+        inputView?.backgroundColor = keyboardBackground
+        inputView?.isOpaque = true
         inputView?.clipsToBounds = false
 
         guard let container = inputView ?? view else { return }
@@ -130,7 +135,7 @@ final class KeyboardViewController: UIInputViewController {
         characterKeys.removeAll()
         rowStacks.removeAll()
         bottomSideKeyConstraints.removeAll()
-        bottomUtilityKeyConstraint = nil
+        bottomUtilityKeyConstraints.removeAll()
         keyboardStack.arrangedSubviews.forEach {
             keyboardStack.removeArrangedSubview($0)
             $0.removeFromSuperview()
@@ -173,7 +178,7 @@ final class KeyboardViewController: UIInputViewController {
             leading.accessibilityLabel = "Цифры"
         }
         if page != .letters {
-            leading.titleLabel?.font = .systemFont(ofSize: 16)
+            leading.setNativeUtilityTextStyle()
         }
         leading.tapAction = { [weak self, weak leading] in
             guard let self else { return }
@@ -281,22 +286,20 @@ final class KeyboardViewController: UIInputViewController {
             self.rebuildKeyboard()
         }
         pageKey.accessibilityLabel = page == .letters ? "Цифры" : "Буквы"
-        pageKey.titleLabel?.font = .systemFont(ofSize: 16)
+        pageKey.setNativeUtilityTextStyle()
         row.addArrangedSubview(pageKey)
-        bottomSideKeyConstraints.append(pageKey.widthAnchor.constraint(equalToConstant: 76))
+        bottomUtilityKeyConstraints.append(pageKey.widthAnchor.constraint(equalToConstant: 42))
 
-        if needsInputModeSwitchKey {
-            let nextKeyboard = makeIconKey(
-                "globe",
-                accessibilityLabel: "Следующая клавиатура",
-                style: .character
-            ) { [weak self] in
-                self?.advanceToNextInputMode()
-            }
-            nextKeyboard.accessibilityHint = "Переключает на следующую установленную клавиатуру"
-            row.addArrangedSubview(nextKeyboard)
-            bottomUtilityKeyConstraint = nextKeyboard.widthAnchor.constraint(equalToConstant: 42)
+        let emoji = makeIconKey(
+            "face.smiling",
+            accessibilityLabel: "Эмодзи",
+            style: .character
+        ) { [weak self] in
+            self?.advanceToNextInputMode()
         }
+        emoji.accessibilityHint = "Переключает на следующую установленную клавиатуру"
+        row.addArrangedSubview(emoji)
+        bottomUtilityKeyConstraints.append(emoji.widthAnchor.constraint(equalToConstant: 42))
 
         let space = makeKey(title: "", style: .character) { [weak self] in
             self?.insert(" ")
@@ -310,7 +313,7 @@ final class KeyboardViewController: UIInputViewController {
         }
         row.addArrangedSubview(enter)
         bottomSideKeyConstraints.append(enter.widthAnchor.constraint(equalToConstant: 76))
-        NSLayoutConstraint.activate(bottomSideKeyConstraints + [bottomUtilityKeyConstraint].compactMap { $0 })
+        NSLayoutConstraint.activate(bottomSideKeyConstraints + bottomUtilityKeyConstraints)
         returnKey = enter
         updateReturnKey()
         return row
@@ -391,10 +394,12 @@ final class KeyboardViewController: UIInputViewController {
 
     private func updateCharacterKey(_ key: KeyboardButton, character: String) {
         let displayed = shifted ? character.uppercased() : character
+        key.setTitle(displayed, for: .normal)
         if page == .letters {
             key.setNativeLetterStyle(shifted: shifted)
+        } else {
+            key.setNativeSymbolStyle()
         }
-        key.setTitle(displayed, for: .normal)
         key.accessibilityLabel = displayed
         let alternates = variants(for: character)
         key.accessibilityHint = alternates.isEmpty
@@ -544,7 +549,7 @@ final class KeyboardViewController: UIInputViewController {
         keyboardStack.spacing = metrics.rowSpacing
         rowStacks.forEach { $0.spacing = metrics.keySpacing }
         bottomSideKeyConstraints.forEach { $0.constant = metrics.bottomSideKeyWidth }
-        bottomUtilityKeyConstraint?.constant = metrics.bottomUtilityKeyWidth
+        bottomUtilityKeyConstraints.forEach { $0.constant = metrics.bottomUtilityKeyWidth }
     }
 
     private func makeSpecialKey(_ title: String, action: (() -> Void)?) -> KeyboardButton {
@@ -611,7 +616,7 @@ private struct KeyboardMetrics: Equatable {
         keySpacing = 6
         horizontalInset = 20 / 3
         bottomSideKeyWidth = (width - 2 * horizontalInset) * 0.24
-        bottomUtilityKeyWidth = Self.clamp(width * 0.12, minimum: 42, maximum: 60)
+        bottomUtilityKeyWidth = 42
     }
 
     private static func clamp(_ value: CGFloat, minimum: CGFloat, maximum: CGFloat) -> CGFloat {
@@ -638,6 +643,8 @@ private final class KeyboardButton: UIButton {
     private var usesActionStyle = false
     private var usesSelectedStyle = false
     private var routedHighlightCount = 0
+    private var titleHorizontalOffset: CGFloat = 0
+    private var titleVerticalOffset: CGFloat = 0
 
     init(style: Style) {
         self.style = style
@@ -668,6 +675,13 @@ private final class KeyboardButton: UIButton {
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    override func titleRect(forContentRect contentRect: CGRect) -> CGRect {
+        super.titleRect(forContentRect: contentRect).offsetBy(
+            dx: titleHorizontalOffset,
+            dy: titleVerticalOffset
+        )
     }
 
     override var isHighlighted: Bool {
@@ -704,9 +718,29 @@ private final class KeyboardButton: UIButton {
 
     func setNativeLetterStyle(shifted: Bool) {
         let fontSize: CGFloat = shifted ? 22 : 25
-        let verticalOffset: CGFloat = shifted ? -1 : -2
+        // Native keyboard legends sit slightly above the button's geometric
+        // center. Lowercase glyphs need the larger optical correction.
+        let verticalOffset: CGFloat = shifted ? -2 : -8 / 3
+        setTextStyle(fontSize: fontSize, verticalOffset: verticalOffset)
+    }
+
+    func setNativeSymbolStyle() {
+        setTextStyle(fontSize: 21, verticalOffset: -2)
+    }
+
+    func setNativeUtilityTextStyle() {
+        setTextStyle(fontSize: 18, verticalOffset: -1, horizontalOffset: 0.75)
+    }
+
+    private func setTextStyle(
+        fontSize: CGFloat,
+        verticalOffset: CGFloat,
+        horizontalOffset: CGFloat = 0.25
+    ) {
         titleLabel?.font = .systemFont(ofSize: fontSize, weight: .regular)
-        titleLabel?.transform = CGAffineTransform(translationX: 0, y: verticalOffset)
+        titleHorizontalOffset = horizontalOffset
+        titleVerticalOffset = verticalOffset
+        setNeedsLayout()
     }
 
     func beginRoutedHighlight() {
@@ -735,7 +769,7 @@ private final class KeyboardButton: UIButton {
         let characterColor = UIColor { traits in
             traits.userInterfaceStyle == .dark
                 ? UIColor(white: 0.34, alpha: 0.82)
-                : UIColor(white: 1, alpha: 0.94)
+                : .white
         }
         let specialColor = UIColor { traits in
             traits.userInterfaceStyle == .dark
