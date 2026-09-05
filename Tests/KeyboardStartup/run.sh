@@ -4,6 +4,11 @@ set -euo pipefail
 project_dir=$(cd "$(dirname "$0")/../.." && pwd)
 device="${1:?Usage: run.sh SIMULATOR_UDID [KeyboardViewController.swift]}"
 source_file="${2:-$project_dir/RussianExtendedKeyboard/Keyboard/KeyboardViewController.swift}"
+samples="${3:-1}"
+if ! [[ "$samples" =~ ^[1-9][0-9]*$ ]]; then
+    echo "Sample count must be a positive integer" >&2
+    exit 2
+fi
 work=$(mktemp -d /tmp/keyboard-startup.XXXXXX)
 app="$work/Benchmark.app"
 mkdir -p "$app"
@@ -17,8 +22,11 @@ cat > "$app/Info.plist" <<'PLIST'
 PLIST
 codesign --force --sign - "$app"
 xcrun simctl install "$device" "$app"
-xcrun simctl launch --console "$device" local.keyboard.startup-benchmark > "$work/result.log" 2>&1
 echo "Benchmark artifacts: $work"
-rg '^(GEOMETRY|BENCHMARK)|error:|Precondition failed|Fatal error' "$work/result.log" || true
-# simctl can exit successfully even when a precondition kills the app.
-rg -q 'checks=passed' "$work/result.log"
+for ((sample = 1; sample <= samples; sample++)); do
+    log="$work/sample-$sample.log"
+    xcrun simctl launch --console "$device" local.keyboard.startup-benchmark > "$log" 2>&1
+    rg '^(BENCHMARK|PHASES|PREVIEW)|error:|Precondition failed|Fatal error' "$log" || true
+    # simctl can exit successfully even when a precondition kills the app.
+    rg -q 'checks=passed' "$log"
+done

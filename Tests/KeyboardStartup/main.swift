@@ -1,6 +1,6 @@
 import UIKit
 
-final class Delegate: UIResponder, UIApplicationDelegate {
+private final class Delegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
     func application(_ application: UIApplication, didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         setbuf(stdout, nil)
@@ -14,11 +14,17 @@ final class Delegate: UIResponder, UIApplicationDelegate {
                 autoreleasepool {
                     let start = CACurrentMediaTime()
                     let keyboard = KeyboardViewController()
+                    let initialized = CACurrentMediaTime()
                     keyboard.loadViewIfNeeded()
+                    let loaded = CACurrentMediaTime()
                     keyboard.view.frame = CGRect(x: 0, y: 0, width: 393, height: 216)
                     keyboard.view.setNeedsLayout()
                     keyboard.view.layoutIfNeeded()
-                    times.append((CACurrentMediaTime() - start) * 1000)
+                    let laidOut = CACurrentMediaTime()
+                    times.append((laidOut - start) * 1000)
+                    if times.count == 1 {
+                        print("PHASES init_ms=\((initialized-start)*1000) load_ms=\((loaded-initialized)*1000) layout_ms=\((laidOut-loaded)*1000)")
+                    }
                     let buttons = self.buttons(in: keyboard.view)
                     precondition(buttons.count == 37, "Expected 37 keys, got \(buttons.count)")
                     self.checkRouting(in: keyboard.view)
@@ -32,13 +38,32 @@ final class Delegate: UIResponder, UIApplicationDelegate {
                     self.buttons(in: keyboard.view).first { $0.accessibilityLabel == "Дополнительные символы" }!.sendActions(for: .touchUpInside)
                     keyboard.view.layoutIfNeeded()
                     self.checkRouting(in: keyboard.view)
-                    precondition(self.buttons(in: keyboard.view).contains { $0.title(for: .normal) == "≠" || $0.title(for: .normal) == "=" })
+                    precondition(self.buttons(in: keyboard.view).contains { $0.title(for: .normal) == "=" })
                     self.buttons(in: keyboard.view).first { $0.accessibilityLabel == "Буквы" }!.sendActions(for: .touchUpInside)
                     keyboard.view.layoutIfNeeded()
                     self.checkRouting(in: keyboard.view)
                     precondition(self.buttons(in: keyboard.view).contains { $0.title(for: .normal) == "й" })
                 }
             }
+            let control = KeyboardButton()
+            var actions: [String] = []
+            control.pressBeganAction = { actions.append("began") }
+            control.tapAction = { actions.append("tap") }
+            control.pressEndedAction = { actions.append("ended") }
+            // UIButton's system accessibility activation needs a hosted accessibility session.
+            // The lightweight control must implement activation itself.
+            if !((control as UIControl) is UIButton) {
+                precondition(control.isAccessibilityElement && control.accessibilityTraits.contains(.button))
+                precondition(control.accessibilityActivate())
+                precondition(actions == ["began", "tap", "ended"])
+            }
+            control.beginRoutedHighlight()
+            control.beginRoutedHighlight()
+            control.endRoutedHighlight()
+            precondition(control.isHighlighted)
+            control.endRoutedHighlight()
+            precondition(!control.isHighlighted)
+
             let keyboard = KeyboardViewController()
             keyboard.loadViewIfNeeded()
             for width: CGFloat in [320, 393, 430, 852, 1024, 393] {
@@ -63,8 +88,33 @@ final class Delegate: UIResponder, UIApplicationDelegate {
                 let data = try! JSONSerialization.data(withJSONObject: frames, options: [.sortedKeys])
                 print("GEOMETRY width=\(width) " + String(data: data, encoding: .utf8)!)
             }
+            let host = window.rootViewController!
+            host.addChild(keyboard)
+            host.view.addSubview(keyboard.view)
+            keyboard.didMove(toParent: host)
+            for style: UIUserInterfaceStyle in [.light, .dark] {
+                window.overrideUserInterfaceStyle = style
+                keyboard.overrideUserInterfaceStyle = style
+                keyboard.view.overrideUserInterfaceStyle = style
+                window.layoutIfNeeded()
+                keyboard.view.layoutIfNeeded()
+                precondition(self.buttons(in: keyboard.view).allSatisfy { $0.traitCollection.userInterfaceStyle == style })
+                let preview = UIGraphicsImageRenderer(size: keyboard.view.bounds.size).image { context in
+                    UIColor(white: style == .dark ? 0.15 : 0.82, alpha: 1).setFill()
+                    context.fill(keyboard.view.bounds)
+                    keyboard.view.layer.render(in: context.cgContext)
+                }
+                let filename = style == .dark ? "keyboard-startup-dark.png" : "keyboard-startup.png"
+                let previewURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(filename)
+                try! preview.pngData()!.write(to: previewURL)
+                print("PREVIEW \(previewURL.path)")
+                let traits = UITraitCollection(userInterfaceStyle: style)
+                for label in self.labels(in: keyboard.view) where !(label.text ?? "").isEmpty {
+                    precondition(label.textColor.resolvedColor(with: traits).isEqual(UIColor.label.resolvedColor(with: traits)))
+                }
+            }
             for (base, alternate) in [("о", "ө"), ("у", "ү"), ("е", "ё"), ("ь", "ъ")] {
-                let key = self.buttons(in: keyboard.view).first { $0.title(for: .normal) == base } as! KeyboardButton
+                let key = self.buttons(in: keyboard.view).first { $0.title(for: .normal) == base }!
                 key.pressBeganAction?()
                 key.longPressBeganAction?(CGPoint(x: 150, y: 100))
                 precondition(self.labels(in: keyboard.view).contains { $0.text == alternate })
@@ -87,7 +137,9 @@ final class Delegate: UIResponder, UIApplicationDelegate {
                 )
                 precondition(abs(fitted.height - expectedHeight) < 0.5, "Incorrect keyboard fitting height")
             }
-            print("BENCHMARK first_ms=\(times[0]) warm_median_ms=\(times.dropFirst().sorted()[15]) checks=passed")
+            let warmTimes = times.dropFirst().sorted()
+            let warmMedian = (warmTimes[14] + warmTimes[15]) / 2
+            print("BENCHMARK first_ms=\(times[0]) warm_median_ms=\(warmMedian) checks=passed")
             fflush(stdout)
             exit(0)
         }
@@ -104,12 +156,12 @@ final class Delegate: UIResponder, UIApplicationDelegate {
     func labels(in view: UIView) -> [UILabel] {
         view.subviews.flatMap { ($0 as? UILabel).map { [$0] } ?? labels(in: $0) }
     }
-    func buttons(in view: UIView) -> [UIButton] {
-        view.subviews.flatMap { ($0 as? UIButton).map { [$0] } ?? buttons(in: $0) }
+    func buttons(in view: UIView) -> [KeyboardButton] {
+        view.subviews.flatMap { ($0 as? KeyboardButton).map { [$0] } ?? buttons(in: $0) }
     }
 }
 private extension KeyboardTouchRouterView {
-    func checkKeyCenters(_ keys: [UIButton]) {
+    func checkKeyCenters(_ keys: [KeyboardButton]) {
         for key in keys {
             let point = key.convert(CGPoint(x: key.bounds.midX, y: key.bounds.midY), to: self)
             precondition(nearestButton(at: point) === key, "Touch routing missed a key after layout/page change")

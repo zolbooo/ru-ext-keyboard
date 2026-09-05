@@ -279,7 +279,9 @@ final class KeyboardViewController: UIInputViewController {
         space.accessibilityLabel = "Пробел"
         row.addSubview(space)
 
-        let enter = makeIconKey("return", accessibilityLabel: "Ввод") { [weak self] in
+        let enter = KeyboardButton()
+        enter.setPreferredSymbolConfiguration(Self.symbolConfiguration, forImageIn: .normal)
+        enter.tapAction = { [weak self] in
             self?.insert("\n")
         }
         row.addSubview(enter)
@@ -318,7 +320,8 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func makeCharacterKey(_ character: String) -> KeyboardButton {
-        let key = makeKey(title: character) { [weak self] in
+        let key = KeyboardButton()
+        key.tapAction = { [weak self] in
             guard let self else { return }
             self.insert(self.shifted ? character.uppercased() : character)
             self.resetShiftIfNeeded()
@@ -363,12 +366,12 @@ final class KeyboardViewController: UIInputViewController {
 
     private func updateCharacterKey(_ key: KeyboardButton, character: String) {
         let displayed = shifted ? character.uppercased() : character
-        key.setTitle(displayed, for: .normal)
         if page == .letters {
             key.setNativeLetterStyle(shifted: shifted)
         } else {
             key.setNativeSymbolStyle()
         }
+        key.setTitle(displayed, for: .normal)
         key.accessibilityLabel = displayed
         let alternates = variants(for: character)
         key.accessibilityHint = alternates.isEmpty
@@ -614,7 +617,72 @@ private struct KeyboardMetrics: Equatable {
     }
 }
 
-private final class KeyboardButton: UIButton {
+// Touch routing is handled by KeyboardTouchRouterView. Keep keys to a control
+// plus the label or image they actually display, without UIButton's content layout.
+private final class KeyboardButton: UIControl {
+    private var storedTitleLabel: UILabel?
+    private var storedImageView: UIImageView?
+    private var symbolConfiguration: UIImage.SymbolConfiguration?
+    private var keyTitle: String?
+
+    private var titleLabel: UILabel? {
+        if storedTitleLabel == nil {
+            let label = UILabel()
+            label.textAlignment = .center
+            label.textColor = .label
+            label.isAccessibilityElement = false
+            addSubview(label)
+            storedTitleLabel = label
+        }
+        return storedTitleLabel
+    }
+
+    func setTitle(_ title: String?, for state: UIControl.State) {
+        keyTitle = title
+        if let title, !title.isEmpty { titleLabel?.text = title }
+        else { storedTitleLabel?.text = title }
+        setNeedsLayout()
+    }
+
+    func title(for state: UIControl.State) -> String? { keyTitle }
+
+    func setPreferredSymbolConfiguration(_ configuration: UIImage.SymbolConfiguration, forImageIn state: UIControl.State) {
+        symbolConfiguration = configuration
+    }
+
+    func setImage(_ image: UIImage?, for state: UIControl.State) {
+        if storedImageView == nil, image != nil {
+            let imageView = UIImageView()
+            imageView.isAccessibilityElement = false
+            addSubview(imageView)
+            storedImageView = imageView
+        }
+        storedImageView?.image = (symbolConfiguration.flatMap { image?.applyingSymbolConfiguration($0) } ?? image)?.withRenderingMode(.alwaysTemplate)
+        setNeedsLayout()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        if let label = storedTitleLabel {
+            let size = label.sizeThatFits(bounds.size)
+            let width = min(size.width, bounds.width)
+            label.frame = CGRect(x: (bounds.width - width) / 2 + titleHorizontalOffset,
+                                 y: (bounds.height - size.height) / 2 + titleVerticalOffset,
+                                 width: width, height: size.height)
+        }
+        if let imageView = storedImageView, let image = imageView.image {
+            imageView.frame = CGRect(x: (bounds.width - image.size.width) / 2,
+                                     y: (bounds.height - image.size.height) / 2,
+                                     width: image.size.width, height: image.size.height)
+        }
+    }
+
+    override func accessibilityActivate() -> Bool {
+        sendActions(for: .touchDown)
+        sendActions(for: .touchUpInside)
+        return true
+    }
+
     var tapAction: (() -> Void)?
     var pressBeganAction: (() -> Void)?
     var pressEndedAction: (() -> Void)?
@@ -630,13 +698,13 @@ private final class KeyboardButton: UIButton {
 
     init() {
         super.init(frame: .zero)
+        isAccessibilityElement = true
+        accessibilityTraits = .button
         layer.cornerRadius = 6
         layer.shadowColor = UIColor.black.cgColor
         layer.shadowOpacity = 0.18
         layer.shadowRadius = 0
         layer.shadowOffset = CGSize(width: 0, height: 1)
-        titleLabel?.adjustsFontSizeToFitWidth = true
-        titleLabel?.minimumScaleFactor = 0.72
         applyAppearance()
         addTarget(self, action: #selector(pressed), for: .touchDown)
         addTarget(self, action: #selector(tapped), for: .touchUpInside)
@@ -650,13 +718,6 @@ private final class KeyboardButton: UIButton {
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
-    }
-
-    override func titleRect(forContentRect contentRect: CGRect) -> CGRect {
-        super.titleRect(forContentRect: contentRect).offsetBy(
-            dx: titleHorizontalOffset,
-            dy: titleVerticalOffset
-        )
     }
 
     override var isHighlighted: Bool {
@@ -703,6 +764,8 @@ private final class KeyboardButton: UIButton {
         horizontalOffset: CGFloat = 0.25
     ) {
         titleLabel?.font = .systemFont(ofSize: fontSize, weight: .regular)
+        titleLabel?.adjustsFontSizeToFitWidth = true
+        titleLabel?.minimumScaleFactor = 0.72
         titleHorizontalOffset = horizontalOffset
         titleVerticalOffset = verticalOffset
         setNeedsLayout()
@@ -729,7 +792,7 @@ private final class KeyboardButton: UIButton {
 
     private func applyAppearance() {
         backgroundColor = isHighlighted ? Self.pressedColor : Self.normalColor
-        setTitleColor(.label, for: .normal)
+        storedTitleLabel?.textColor = .label
         tintColor = .label
     }
 
@@ -1025,6 +1088,7 @@ private final class VariantPopup: UIView {
             label.text = value
             label.font = .systemFont(ofSize: 22)
             label.textAlignment = .center
+            label.textColor = .label
             label.isAccessibilityElement = true
             label.accessibilityLabel = value
             return label
