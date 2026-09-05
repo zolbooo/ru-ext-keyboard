@@ -41,6 +41,7 @@ final class KeyboardViewController: UIInputViewController {
     private var characterKeys: [(button: KeyboardButton, character: String)] = []
     private var keyboardRows: [UIView] = []
     private var appliedMetrics: KeyboardMetrics?
+    private var appliedLayoutWidth: CGFloat?
     private var keyboardHeightConstraint: NSLayoutConstraint!
     private var variantPresentationFeedback: UIImpactFeedbackGenerator?
     private var variantSelectionFeedback: UISelectionFeedbackGenerator?
@@ -82,10 +83,25 @@ final class KeyboardViewController: UIInputViewController {
         guard let container = inputView ?? view else { return }
         layoutContainer = container
 
+        // Keep an Auto Layout boundary for the system's input-view sizing. The
+        // rows inside it use frames, but must not leave the host with a detached
+        // content area and its initial, oversized keyboard height.
+        keyboardContent.translatesAutoresizingMaskIntoConstraints = false
+        touchRouter.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(keyboardContent)
         container.addSubview(touchRouter)
         keyboardHeightConstraint = container.heightAnchor.constraint(equalToConstant: 216)
-        keyboardHeightConstraint.isActive = true
+        NSLayoutConstraint.activate([
+            keyboardHeightConstraint,
+            keyboardContent.topAnchor.constraint(equalTo: container.topAnchor),
+            keyboardContent.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            keyboardContent.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            keyboardContent.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            touchRouter.topAnchor.constraint(equalTo: container.topAnchor),
+            touchRouter.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            touchRouter.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            touchRouter.bottomAnchor.constraint(equalTo: container.bottomAnchor)
+        ])
     }
 
     override func textDidChange(_ textInput: UITextInput?) {
@@ -494,11 +510,10 @@ final class KeyboardViewController: UIInputViewController {
         let width = containerWidth > 0 ? containerWidth : 320
         let metrics = KeyboardMetrics(width: width, traits: traitCollection)
         // Width can change without changing portrait spacing or height.
-        guard force || metrics != appliedMetrics || keyboardContent.bounds.width != width else { return }
+        guard force || metrics != appliedMetrics || appliedLayoutWidth != width else { return }
         appliedMetrics = metrics
+        appliedLayoutWidth = width
         keyboardHeightConstraint.constant = metrics.keyboardHeight
-        keyboardContent.frame = CGRect(x: 0, y: 0, width: width, height: metrics.keyboardHeight)
-        touchRouter.frame = keyboardContent.frame
 
         // The keyboard has four fixed rows; direct frames avoid creating and solving
         // a stack-view constraint graph every time the extension opens or changes page.

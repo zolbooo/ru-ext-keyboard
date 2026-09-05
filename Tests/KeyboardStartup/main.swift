@@ -3,6 +3,7 @@ import UIKit
 final class Delegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
     func application(_ application: UIApplication, didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+        setbuf(stdout, nil)
         let window = UIWindow(frame: UIScreen.main.bounds)
         self.window = window
         window.rootViewController = UIViewController()
@@ -69,6 +70,22 @@ final class Delegate: UIResponder, UIApplicationDelegate {
                 precondition(self.labels(in: keyboard.view).contains { $0.text == alternate })
                 key.longPressCancelledAction?()
                 precondition(!self.labels(in: keyboard.view).contains { $0.text == alternate })
+            }
+            // Check the outer view's fitting height without supplying a height.
+            // The key-frame checks above assign one and cannot validate sizing.
+            let sizingKeyboard = KeyboardViewController()
+            sizingKeyboard.loadViewIfNeeded()
+            for width: CGFloat in [393, 852, 393] {
+                sizingKeyboard.view.bounds.size = CGSize(width: width, height: 500)
+                sizingKeyboard.view.setNeedsLayout()
+                sizingKeyboard.view.layoutIfNeeded()
+                let expectedHeight = KeyboardMetrics(width: width, traits: sizingKeyboard.traitCollection).keyboardHeight
+                let fitted = sizingKeyboard.view.systemLayoutSizeFitting(
+                    CGSize(width: width, height: UIView.layoutFittingCompressedSize.height),
+                    withHorizontalFittingPriority: .required,
+                    verticalFittingPriority: .fittingSizeLevel
+                )
+                precondition(abs(fitted.height - expectedHeight) < 0.5, "Incorrect keyboard fitting height")
             }
             print("BENCHMARK first_ms=\(times[0]) warm_median_ms=\(times.dropFirst().sorted()[15]) checks=passed")
             fflush(stdout)

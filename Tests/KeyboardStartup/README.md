@@ -30,6 +30,10 @@ Assertions cover 37 letter-page keys, nonzero key dimensions, shift, all three
 pages, touch routing at every key center after page changes, resizing through
 320/393/430/852/1024/393-point widths, and opening/cancelling ө/ү/ё/ъ variants.
 `GEOMETRY` records allow comparison of key order and frames between versions.
+The outer view's Auto Layout fitting height is also checked at portrait and
+landscape widths, starting from an oversized 500-point frame. This verifies the
+216/169-point height requests; extension hosting on a device remains a separate
+check.
 The harness does not simulate physical touches or verify haptic hardware.
 
 ## Recorded comparison
