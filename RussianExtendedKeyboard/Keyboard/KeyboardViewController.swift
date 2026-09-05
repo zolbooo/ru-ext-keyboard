@@ -33,28 +33,24 @@ final class KeyboardViewController: UIInputViewController {
         [".", ",", "?", "!", "'"]
     ]
 
-    private let keyboardStack = UIStackView()
+    private let keyboardContent = UIView()
     private let touchRouter = KeyboardTouchRouterView()
     private weak var layoutContainer: UIView?
     private var page: Page = .letters
     private var shifted = false
     private var characterKeys: [(button: KeyboardButton, character: String)] = []
-    private var rowStacks: [UIStackView] = []
-    private var bottomSideKeyConstraints: [NSLayoutConstraint] = []
-    private var bottomUtilityKeyConstraints: [NSLayoutConstraint] = []
+    private var keyboardRows: [UIView] = []
     private var appliedMetrics: KeyboardMetrics?
     private var keyboardHeightConstraint: NSLayoutConstraint!
-    private var keyboardTopConstraint: NSLayoutConstraint!
-    private var keyboardLeadingConstraint: NSLayoutConstraint!
-    private var keyboardTrailingConstraint: NSLayoutConstraint!
-    private var keyboardBottomConstraint: NSLayoutConstraint!
-    private var variantPresentationFeedback: UIImpactFeedbackGenerator!
-    private var variantSelectionFeedback: UISelectionFeedbackGenerator!
+    private var variantPresentationFeedback: UIImpactFeedbackGenerator?
+    private var variantSelectionFeedback: UISelectionFeedbackGenerator?
     private var variantPopup: VariantPopup?
     private var backspaceRepeatTimer: Timer?
     private var backspaceRepeatCount = 0
-    private let backspaceWordTokenizer = NLTokenizer(unit: .word)
+    // Word deletion starts only after a sustained backspace hold.
+    private lazy var backspaceWordTokenizer = NLTokenizer(unit: .word)
     private weak var returnKey: KeyboardButton?
+    private var appliedReturnKeyType: UIReturnKeyType?
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -85,38 +81,11 @@ final class KeyboardViewController: UIInputViewController {
 
         guard let container = inputView ?? view else { return }
         layoutContainer = container
-        configureVariantFeedback(for: container)
 
-        keyboardStack.axis = .vertical
-        keyboardStack.distribution = .fillEqually
-        keyboardStack.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(keyboardStack)
-
-        touchRouter.translatesAutoresizingMaskIntoConstraints = false
-        touchRouter.buttonsProvider = { [weak self] in
-            self?.rowStacks.flatMap { row in
-                row.arrangedSubviews.compactMap { $0 as? KeyboardButton }
-            } ?? []
-        }
+        container.addSubview(keyboardContent)
         container.addSubview(touchRouter)
-
-        keyboardHeightConstraint = container.heightAnchor.constraint(equalToConstant: 276)
-        keyboardTopConstraint = keyboardStack.topAnchor.constraint(equalTo: container.topAnchor)
-        keyboardLeadingConstraint = keyboardStack.leadingAnchor.constraint(equalTo: container.leadingAnchor)
-        keyboardTrailingConstraint = keyboardStack.trailingAnchor.constraint(equalTo: container.trailingAnchor)
-        keyboardBottomConstraint = keyboardStack.bottomAnchor.constraint(equalTo: container.bottomAnchor)
-
-        NSLayoutConstraint.activate([
-            keyboardHeightConstraint,
-            keyboardTopConstraint,
-            keyboardLeadingConstraint,
-            keyboardTrailingConstraint,
-            keyboardBottomConstraint,
-            touchRouter.topAnchor.constraint(equalTo: container.topAnchor),
-            touchRouter.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            touchRouter.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            touchRouter.bottomAnchor.constraint(equalTo: container.bottomAnchor)
-        ])
+        keyboardHeightConstraint = container.heightAnchor.constraint(equalToConstant: 216)
+        keyboardHeightConstraint.isActive = true
     }
 
     override func textDidChange(_ textInput: UITextInput?) {
@@ -128,13 +97,9 @@ final class KeyboardViewController: UIInputViewController {
         touchRouter.cancelAllTouches()
         dismissVariantPopup()
         characterKeys.removeAll()
-        rowStacks.removeAll()
-        bottomSideKeyConstraints.removeAll()
-        bottomUtilityKeyConstraints.removeAll()
-        keyboardStack.arrangedSubviews.forEach {
-            keyboardStack.removeArrangedSubview($0)
-            $0.removeFromSuperview()
-        }
+        touchRouter.buttons.removeAll()
+        keyboardRows.forEach { $0.removeFromSuperview() }
+        keyboardRows.removeAll(keepingCapacity: true)
 
         let rows: [[String]]
         switch page {
@@ -145,16 +110,17 @@ final class KeyboardViewController: UIInputViewController {
         case .moreSymbols:
             rows = moreSymbolRows
         }
-        keyboardStack.addArrangedSubview(makeCharacterRow(rows[0]))
-        keyboardStack.addArrangedSubview(makeCharacterRow(rows[1]))
-        keyboardStack.addArrangedSubview(makeThirdRow(rows[2]))
-        keyboardStack.addArrangedSubview(makeBottomRow())
+        keyboardContent.addSubview(makeCharacterRow(rows[0]))
+        keyboardContent.addSubview(makeCharacterRow(rows[1]))
+        keyboardContent.addSubview(makeThirdRow(rows[2]))
+        keyboardContent.addSubview(makeBottomRow())
+        touchRouter.buttons = keyboardRows.flatMap { $0.subviews.compactMap { $0 as? KeyboardButton } }
         updateLayoutMetrics(force: true)
     }
 
     private func makeCharacterRow(_ characters: [String]) -> UIView {
         let row = makeRow()
-        characters.forEach { row.addArrangedSubview(makeCharacterKey($0)) }
+        characters.forEach { row.addSubview(makeCharacterKey($0)) }
         return row
     }
 
@@ -164,12 +130,12 @@ final class KeyboardViewController: UIInputViewController {
         let leading: KeyboardButton
         switch page {
         case .letters:
-            leading = makeIconKey("shift", accessibilityLabel: "Сдвиг", style: .character)
+            leading = makeIconKey("shift", accessibilityLabel: "Сдвиг")
         case .symbols:
-            leading = makeKey(title: "#+=", style: .character, action: nil)
+            leading = makeKey(title: "#+=", action: nil)
             leading.accessibilityLabel = "Дополнительные символы"
         case .moreSymbols:
-            leading = makeKey(title: "123", style: .character, action: nil)
+            leading = makeKey(title: "123", action: nil)
             leading.accessibilityLabel = "Цифры"
         }
         if page != .letters {
@@ -184,7 +150,6 @@ final class KeyboardViewController: UIInputViewController {
                     UIImage(systemName: self.shifted ? "shift.fill" : "shift"),
                     for: .normal
                 )
-                leading?.setSelectedStyle(self.shifted)
                 self.updateCharacterKeys()
             case .symbols:
                 self.page = .moreSymbols
@@ -194,17 +159,17 @@ final class KeyboardViewController: UIInputViewController {
                 self.rebuildKeyboard()
             }
         }
-        row.addArrangedSubview(leading)
-        characters.forEach { row.addArrangedSubview(makeCharacterKey($0)) }
+        row.addSubview(leading)
+        characters.forEach { row.addSubview(makeCharacterKey($0)) }
 
-        let delete = makeIconKey("delete.left", accessibilityLabel: "Удалить", style: .character)
+        let delete = makeIconKey("delete.left", accessibilityLabel: "Удалить")
         delete.pressBeganAction = { [weak self] in
             self?.beginBackspace()
         }
         delete.pressEndedAction = { [weak self] in
             self?.endBackspace()
         }
-        row.addArrangedSubview(delete)
+        row.addSubview(delete)
         return row
     }
 
@@ -248,6 +213,7 @@ final class KeyboardViewController: UIInputViewController {
         }
 
         backspaceWordTokenizer.string = context
+        defer { backspaceWordTokenizer.string = nil }
         guard let tokenRange = backspaceWordTokenizer
             .tokens(for: context.startIndex..<context.endIndex)
             .last else {
@@ -269,11 +235,9 @@ final class KeyboardViewController: UIInputViewController {
 
     private func makeBottomRow() -> UIView {
         let row = makeRow()
-        row.distribution = .fill
 
         let pageKey = makeKey(
-            title: page == .letters ? "123" : "АБВ",
-            style: .character
+            title: page == .letters ? "123" : "АБВ"
         ) { [weak self] in
             guard let self else { return }
             self.page = self.page == .letters ? .symbols : .letters
@@ -282,34 +246,29 @@ final class KeyboardViewController: UIInputViewController {
         }
         pageKey.accessibilityLabel = page == .letters ? "Цифры" : "Буквы"
         pageKey.setNativeUtilityTextStyle()
-        row.addArrangedSubview(pageKey)
-        bottomUtilityKeyConstraints.append(pageKey.widthAnchor.constraint(equalToConstant: 42))
+        row.addSubview(pageKey)
 
         let emoji = makeIconKey(
             "face.smiling",
-            accessibilityLabel: "Эмодзи",
-            style: .character
+            accessibilityLabel: "Эмодзи"
         ) { [weak self] in
             self?.advanceToNextInputMode()
         }
         emoji.accessibilityHint = "Переключает на следующую установленную клавиатуру"
-        row.addArrangedSubview(emoji)
-        bottomUtilityKeyConstraints.append(emoji.widthAnchor.constraint(equalToConstant: 42))
+        row.addSubview(emoji)
 
-        let space = makeKey(title: "", style: .character) { [weak self] in
+        let space = makeKey(title: "") { [weak self] in
             self?.insert(" ")
         }
         space.accessibilityLabel = "Пробел"
-        space.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        row.addArrangedSubview(space)
+        row.addSubview(space)
 
-        let enter = makeIconKey("return", accessibilityLabel: "Ввод", style: .character) { [weak self] in
+        let enter = makeIconKey("return", accessibilityLabel: "Ввод") { [weak self] in
             self?.insert("\n")
         }
-        row.addArrangedSubview(enter)
-        bottomSideKeyConstraints.append(enter.widthAnchor.constraint(equalToConstant: 76))
-        NSLayoutConstraint.activate(bottomSideKeyConstraints + bottomUtilityKeyConstraints)
+        row.addSubview(enter)
         returnKey = enter
+        appliedReturnKeyType = nil
         updateReturnKey()
         return row
     }
@@ -317,9 +276,9 @@ final class KeyboardViewController: UIInputViewController {
     private func updateReturnKey() {
         guard let returnKey else { return }
 
-        returnKey.setImage(nil, for: .normal)
-        returnKey.setTitle(nil, for: .normal)
-        let returnKeyType = textDocumentProxy.returnKeyType
+        let returnKeyType = textDocumentProxy.returnKeyType ?? .default
+        guard returnKeyType != appliedReturnKeyType else { return }
+        appliedReturnKeyType = returnKeyType
         switch returnKeyType {
         case .search:
             returnKey.setImage(UIImage(systemName: "magnifyingglass"), for: .normal)
@@ -340,11 +299,10 @@ final class KeyboardViewController: UIInputViewController {
             returnKey.setImage(UIImage(systemName: "return"), for: .normal)
             returnKey.accessibilityLabel = "Ввод"
         }
-        returnKey.setActionStyle(false)
     }
 
     private func makeCharacterKey(_ character: String) -> KeyboardButton {
-        let key = makeKey(title: character, style: .character) { [weak self] in
+        let key = makeKey(title: character) { [weak self] in
             guard let self else { return }
             self.insert(self.shifted ? character.uppercased() : character)
             self.resetShiftIfNeeded()
@@ -441,7 +399,7 @@ final class KeyboardViewController: UIInputViewController {
         guard !alternates.isEmpty else { return }
         showVariants([displayed] + alternates, from: key)
         playVariantPresentationFeedback(at: location)
-        variantSelectionFeedback.prepare()
+        variantSelectionFeedback?.prepare()
     }
 
     private func endVariantSelection(at location: CGPoint) {
@@ -485,11 +443,11 @@ final class KeyboardViewController: UIInputViewController {
         guard popup.selectValue(at: localLocation) else { return }
         if emitFeedback, popup.selectedValue != nil {
             if #available(iOS 17.5, *) {
-                variantSelectionFeedback.selectionChanged(at: location)
+                variantSelectionFeedback?.selectionChanged(at: location)
             } else {
-                variantSelectionFeedback.selectionChanged()
+                variantSelectionFeedback?.selectionChanged()
             }
-            variantSelectionFeedback.prepare()
+            variantSelectionFeedback?.prepare()
         }
     }
 
@@ -504,15 +462,19 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func prepareVariantFeedback() {
-        variantPresentationFeedback.prepare()
-        variantSelectionFeedback.prepare()
+        guard hasFullAccess else { return }
+        if variantPresentationFeedback == nil, let container = layoutContainer {
+            configureVariantFeedback(for: container)
+        }
+        variantPresentationFeedback?.prepare()
+        variantSelectionFeedback?.prepare()
     }
 
     private func playVariantPresentationFeedback(at location: CGPoint) {
         if #available(iOS 17.5, *) {
-            variantPresentationFeedback.impactOccurred(intensity: 0.85, at: location)
+            variantPresentationFeedback?.impactOccurred(intensity: 0.85, at: location)
         } else {
-            variantPresentationFeedback.impactOccurred(intensity: 0.85)
+            variantPresentationFeedback?.impactOccurred(intensity: 0.85)
         }
     }
 
@@ -521,11 +483,9 @@ final class KeyboardViewController: UIInputViewController {
         variantPopup = nil
     }
 
-    private func makeRow() -> UIStackView {
-        let row = UIStackView()
-        row.axis = .horizontal
-        row.distribution = .fillEqually
-        rowStacks.append(row)
+    private func makeRow() -> UIView {
+        let row = UIView()
+        keyboardRows.append(row)
         return row
     }
 
@@ -533,39 +493,59 @@ final class KeyboardViewController: UIInputViewController {
         let containerWidth = layoutContainer?.bounds.width ?? view.bounds.width
         let width = containerWidth > 0 ? containerWidth : 320
         let metrics = KeyboardMetrics(width: width, traits: traitCollection)
-        guard force || metrics != appliedMetrics else { return }
+        // Width can change without changing portrait spacing or height.
+        guard force || metrics != appliedMetrics || keyboardContent.bounds.width != width else { return }
         appliedMetrics = metrics
-
         keyboardHeightConstraint.constant = metrics.keyboardHeight
-        keyboardTopConstraint.constant = metrics.topInset
-        keyboardLeadingConstraint.constant = metrics.horizontalInset
-        keyboardTrailingConstraint.constant = -metrics.horizontalInset
-        keyboardBottomConstraint.constant = -metrics.bottomInset
-        keyboardStack.spacing = metrics.rowSpacing
-        rowStacks.forEach { $0.spacing = metrics.keySpacing }
-        bottomSideKeyConstraints.forEach { $0.constant = metrics.bottomSideKeyWidth }
-        bottomUtilityKeyConstraints.forEach { $0.constant = metrics.bottomUtilityKeyWidth }
+        keyboardContent.frame = CGRect(x: 0, y: 0, width: width, height: metrics.keyboardHeight)
+        touchRouter.frame = keyboardContent.frame
+
+        // The keyboard has four fixed rows; direct frames avoid creating and solving
+        // a stack-view constraint graph every time the extension opens or changes page.
+        let rowWidth = width - 2 * metrics.horizontalInset
+        let rowHeight = (metrics.keyboardHeight - metrics.topInset - metrics.bottomInset
+            - 3 * metrics.rowSpacing) / 4
+        for (rowIndex, row) in keyboardRows.enumerated() {
+            row.frame = CGRect(x: metrics.horizontalInset,
+                               y: metrics.topInset + CGFloat(rowIndex) * (rowHeight + metrics.rowSpacing),
+                               width: rowWidth, height: rowHeight)
+            let keys = row.subviews
+            let availableWidth = rowWidth - CGFloat(keys.count - 1) * metrics.keySpacing
+            var x: CGFloat = 0
+            for (index, key) in keys.enumerated() {
+                let keyWidth: CGFloat
+                if rowIndex == 3 {
+                    switch index {
+                    case 0, 1: keyWidth = metrics.bottomUtilityKeyWidth
+                    case 3: keyWidth = metrics.bottomSideKeyWidth
+                    default: keyWidth = availableWidth - 2 * metrics.bottomUtilityKeyWidth - metrics.bottomSideKeyWidth
+                    }
+                } else {
+                    keyWidth = availableWidth / CGFloat(keys.count)
+                }
+                key.frame = CGRect(x: x, y: 0, width: keyWidth, height: rowHeight)
+                x += keyWidth + metrics.keySpacing
+            }
+        }
     }
 
-    private func makeSpecialKey(_ title: String, action: (() -> Void)?) -> KeyboardButton {
-        makeKey(title: title, style: .special, action: action)
-    }
+    private static let symbolConfiguration = UIImage.SymbolConfiguration(pointSize: 18, weight: .regular)
 
     private func makeIconKey(
         _ systemName: String,
         accessibilityLabel: String,
-        style: KeyboardButton.Style = .special,
         action: (() -> Void)? = nil
     ) -> KeyboardButton {
-        let key = KeyboardButton(style: style)
+        let key = KeyboardButton()
+        key.setPreferredSymbolConfiguration(Self.symbolConfiguration, forImageIn: .normal)
         key.setImage(UIImage(systemName: systemName), for: .normal)
         key.accessibilityLabel = accessibilityLabel
         key.tapAction = action
         return key
     }
 
-    private func makeKey(title: String, style: KeyboardButton.Style, action: (() -> Void)?) -> KeyboardButton {
-        let key = KeyboardButton(style: style)
+    private func makeKey(title: String, action: (() -> Void)?) -> KeyboardButton {
+        let key = KeyboardButton()
         key.setTitle(title, for: .normal)
         key.tapAction = action
         return key
@@ -620,11 +600,6 @@ private struct KeyboardMetrics: Equatable {
 }
 
 private final class KeyboardButton: UIButton {
-    enum Style {
-        case character
-        case special
-    }
-
     var tapAction: (() -> Void)?
     var pressBeganAction: (() -> Void)?
     var pressEndedAction: (() -> Void)?
@@ -634,29 +609,19 @@ private final class KeyboardButton: UIButton {
     var longPressCancelledAction: (() -> Void)?
     var isRoutableCharacter = false
 
-    private let style: Style
-    private var usesActionStyle = false
-    private var usesSelectedStyle = false
     private var routedHighlightCount = 0
     private var titleHorizontalOffset: CGFloat = 0
     private var titleVerticalOffset: CGFloat = 0
 
-    init(style: Style) {
-        self.style = style
+    init() {
         super.init(frame: .zero)
-        translatesAutoresizingMaskIntoConstraints = false
         layer.cornerRadius = 6
         layer.shadowColor = UIColor.black.cgColor
         layer.shadowOpacity = 0.18
         layer.shadowRadius = 0
         layer.shadowOffset = CGSize(width: 0, height: 1)
-        titleLabel?.font = .systemFont(ofSize: style == .character ? 21 : 17)
         titleLabel?.adjustsFontSizeToFitWidth = true
         titleLabel?.minimumScaleFactor = 0.72
-        setPreferredSymbolConfiguration(
-            UIImage.SymbolConfiguration(pointSize: 18, weight: .regular),
-            forImageIn: .normal
-        )
         applyAppearance()
         addTarget(self, action: #selector(pressed), for: .touchDown)
         addTarget(self, action: #selector(tapped), for: .touchUpInside)
@@ -701,16 +666,6 @@ private final class KeyboardButton: UIButton {
         applyAppearance()
     }
 
-    func setActionStyle(_ enabled: Bool) {
-        usesActionStyle = enabled
-        applyAppearance()
-    }
-
-    func setSelectedStyle(_ enabled: Bool) {
-        usesSelectedStyle = enabled
-        applyAppearance()
-    }
-
     func setNativeLetterStyle(shifted: Bool) {
         let fontSize: CGFloat = shifted ? 22 : 25
         // Native keyboard legends sit slightly above the button's geometric
@@ -748,38 +703,17 @@ private final class KeyboardButton: UIButton {
         isHighlighted = routedHighlightCount > 0
     }
 
-    private func applyAppearance() {
-        if usesActionStyle {
-            let pressedActionColor = UIColor { traits in
-                traits.userInterfaceStyle == .dark
-                    ? UIColor(red: 0.03, green: 0.36, blue: 0.76, alpha: 1)
-                    : UIColor(red: 0, green: 0.38, blue: 0.80, alpha: 1)
-            }
-            backgroundColor = isHighlighted ? pressedActionColor : .systemBlue
-            setTitleColor(.white, for: .normal)
-            tintColor = .white
-            return
-        }
+    private static let normalColor = UIColor { traits in
+        traits.userInterfaceStyle == .dark ? UIColor(white: 0.34, alpha: 0.82) : .white
+    }
+    private static let pressedColor = UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(white: 0.52, alpha: 0.96)
+            : UIColor(white: 0.72, alpha: 0.96)
+    }
 
-        let characterColor = UIColor { traits in
-            traits.userInterfaceStyle == .dark
-                ? UIColor(white: 0.34, alpha: 0.82)
-                : .white
-        }
-        let specialColor = UIColor { traits in
-            traits.userInterfaceStyle == .dark
-                ? UIColor(white: 0.24, alpha: 0.88)
-                : UIColor(white: 0.62, alpha: 0.72)
-        }
-        let pressedCharacterColor = UIColor { traits in
-            traits.userInterfaceStyle == .dark
-                ? UIColor(white: 0.52, alpha: 0.96)
-                : UIColor(white: 0.72, alpha: 0.96)
-        }
-        let usesCharacterColor = style == .character || usesSelectedStyle
-        let normalColor = usesCharacterColor ? characterColor : specialColor
-        let highlightedColor = usesCharacterColor ? pressedCharacterColor : characterColor
-        backgroundColor = isHighlighted ? highlightedColor : normalColor
+    private func applyAppearance() {
+        backgroundColor = isHighlighted ? Self.pressedColor : Self.normalColor
         setTitleColor(.label, for: .normal)
         tintColor = .label
     }
@@ -824,7 +758,7 @@ private final class KeyboardTouchRouterView: UIView {
         }
     }
 
-    var buttonsProvider: (() -> [KeyboardButton])?
+    var buttons: [KeyboardButton] = []
 
     private static let longPressDuration: TimeInterval = 0.42
     private static let longPressMovement: CGFloat = 22
@@ -1023,7 +957,7 @@ private final class KeyboardTouchRouterView: UIView {
     }
 
     private func nearestButton(at location: CGPoint) -> KeyboardButton? {
-        guard let buttons = buttonsProvider?(), !buttons.isEmpty else { return nil }
+        guard !buttons.isEmpty else { return nil }
         var nearest: KeyboardButton?
         var nearestDistance = CGFloat.greatestFiniteMagnitude
 
