@@ -1,0 +1,11 @@
+{
+  "runtime": "iOS 26.5",
+  "build": "23F77",
+  "device": "iPhone 17 Pro",
+  "architecture": "arm64 Simulator",
+  "binary": "UIKitCore.framework/UIKitCore",
+  "uuid": "12463677-be34-38f7-9e11-3421bbf362fc",
+  "sha256": "f5177ba651c3b539f77626b97f78473a6ea173a96349959b9e697ed322c03295",
+  "investigated": "2026-09-08",
+  "verification": "Direct native method calls, runtime object inspection, and Mach-O disassembly; no end-to-end sustained-touch timing measurement."
+}

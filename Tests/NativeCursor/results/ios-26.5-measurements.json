@@ -1,0 +1,868 @@
+{
+  "acceleration": [
+    {
+      "active": true,
+      "expected": [
+        0.250625,
+        0
+      ],
+      "native": [
+        0.250625,
+        0
+      ],
+      "raw": [
+        0.25,
+        0
+      ],
+      "velocity": [
+        0,
+        0
+      ]
+    },
+    {
+      "active": true,
+      "expected": [
+        0.755625,
+        0
+      ],
+      "native": [
+        0.755625,
+        0
+      ],
+      "raw": [
+        0.75,
+        0
+      ],
+      "velocity": [
+        1111,
+        -777
+      ]
+    },
+    {
+      "active": true,
+      "expected": [
+        1.795625,
+        0
+      ],
+      "native": [
+        1.795625,
+        0
+      ],
+      "raw": [
+        1.75,
+        0
+      ],
+      "velocity": [
+        2222,
+        -1554
+      ]
+    },
+    {
+      "active": true,
+      "expected": [
+        4.115625,
+        0
+      ],
+      "native": [
+        4.115625,
+        0
+      ],
+      "raw": [
+        3.75,
+        0
+      ],
+      "velocity": [
+        3333,
+        -2331
+      ]
+    },
+    {
+      "active": true,
+      "expected": [
+        10.035625,
+        0
+      ],
+      "native": [
+        10.035625,
+        0
+      ],
+      "raw": [
+        7.75,
+        0
+      ],
+      "velocity": [
+        4444,
+        -3108
+      ]
+    },
+    {
+      "active": true,
+      "expected": [
+        10.035625,
+        5.92
+      ],
+      "native": [
+        10.035625,
+        5.92
+      ],
+      "raw": [
+        7.75,
+        4
+      ],
+      "velocity": [
+        5555,
+        -3885
+      ]
+    },
+    {
+      "active": true,
+      "expected": [
+        5.115625,
+        -0.6400000000000001
+      ],
+      "native": [
+        5.115625,
+        -0.6400000000000001
+      ],
+      "raw": [
+        4.75,
+        0
+      ],
+      "velocity": [
+        6666,
+        -4662
+      ]
+    },
+    {
+      "active": true,
+      "expected": [
+        -10.979805810031051,
+        -0.6400000000000001
+      ],
+      "native": [
+        -10.979805810031053,
+        -0.6400000000000001
+      ],
+      "raw": [
+        -3.25,
+        0
+      ],
+      "velocity": [
+        7777,
+        -5439
+      ]
+    },
+    {
+      "active": true,
+      "expected": [
+        -10.87972581003105,
+        -0.7400800000000001
+      ],
+      "native": [
+        -10.879725810031053,
+        -0.7400800000000001
+      ],
+      "raw": [
+        -3.15,
+        -0.1
+      ],
+      "velocity": [
+        8888,
+        -6216
+      ]
+    },
+    {
+      "active": true,
+      "expected": [
+        -10.87972581003105,
+        -0.7400800000000001
+      ],
+      "native": [
+        -10.879725810031053,
+        -0.7400800000000001
+      ],
+      "raw": [
+        -3.15,
+        -0.1
+      ],
+      "velocity": [
+        9999,
+        -6993
+      ]
+    },
+    {
+      "active": true,
+      "expected": [
+        15.197208808394706,
+        30.552241542110913
+      ],
+      "native": [
+        15.197208808394707,
+        30.552241542110913
+      ],
+      "raw": [
+        6.85,
+        11.9
+      ],
+      "velocity": [
+        11110,
+        -7770
+      ]
+    },
+    {
+      "active": false,
+      "expected": [
+        5.197208808394706,
+        18.552241542110913
+      ],
+      "native": [
+        5.1972088083947074,
+        18.552241542110913
+      ],
+      "raw": [
+        -3.1500000000000004,
+        -0.09999999999999964
+      ],
+      "velocity": [
+        12221,
+        -8547
+      ]
+    }
+  ],
+  "bounding": [
+    {
+      "correction": [
+        0,
+        0
+      ],
+      "expected": [
+        0,
+        0
+      ],
+      "native": [
+        0,
+        0
+      ],
+      "raw": [
+        0,
+        0
+      ]
+    },
+    {
+      "correction": [
+        5,
+        -5
+      ],
+      "expected": [
+        8,
+        -3
+      ],
+      "native": [
+        8,
+        -3
+      ],
+      "raw": [
+        3,
+        2
+      ]
+    },
+    {
+      "correction": [
+        3,
+        -3
+      ],
+      "expected": [
+        11,
+        -1
+      ],
+      "native": [
+        11,
+        -1
+      ],
+      "raw": [
+        6,
+        4
+      ]
+    },
+    {
+      "correction": [
+        -1,
+        1
+      ],
+      "expected": [
+        13,
+        2
+      ],
+      "native": [
+        13,
+        2
+      ],
+      "raw": [
+        9,
+        6
+      ]
+    },
+    {
+      "correction": [
+        -8,
+        8
+      ],
+      "expected": [
+        8,
+        12
+      ],
+      "native": [
+        8,
+        12
+      ],
+      "raw": [
+        12,
+        8
+      ]
+    },
+    {
+      "correction": [
+        0,
+        0
+      ],
+      "expected": [
+        11,
+        14
+      ],
+      "native": [
+        11,
+        14
+      ],
+      "raw": [
+        15,
+        10
+      ]
+    },
+    {
+      "correction": [
+        -9,
+        9
+      ],
+      "expected": [
+        9,
+        21
+      ],
+      "native": [
+        9,
+        21
+      ],
+      "raw": [
+        18,
+        12
+      ]
+    },
+    {
+      "correction": [
+        2,
+        -2
+      ],
+      "expected": [
+        14,
+        21
+      ],
+      "native": [
+        14,
+        21
+      ],
+      "raw": [
+        21,
+        14
+      ]
+    },
+    {
+      "correction": [
+        20,
+        -20
+      ],
+      "expected": [
+        37,
+        3
+      ],
+      "native": [
+        37,
+        3
+      ],
+      "raw": [
+        24,
+        16
+      ]
+    }
+  ],
+  "curve": {
+    "maximumAbsoluteError": 8.881784197001252e-16,
+    "samples": [
+      {
+        "nativeExtraGain": 0,
+        "reconstructedExtraGain": 0,
+        "step": 0
+      },
+      {
+        "nativeExtraGain": 0.04000000000000001,
+        "reconstructedExtraGain": 0.04,
+        "step": 1
+      },
+      {
+        "nativeExtraGain": 0.16000000000000003,
+        "reconstructedExtraGain": 0.16,
+        "step": 2
+      },
+      {
+        "nativeExtraGain": 0.32000000000000006,
+        "reconstructedExtraGain": 0.32,
+        "step": 3
+      },
+      {
+        "nativeExtraGain": 0.4800000000000001,
+        "reconstructedExtraGain": 0.48,
+        "step": 4
+      },
+      {
+        "nativeExtraGain": 0.6400000000000001,
+        "reconstructedExtraGain": 0.64,
+        "step": 5
+      },
+      {
+        "nativeExtraGain": 0.7838367176906171,
+        "reconstructedExtraGain": 0.783836717690617,
+        "step": 6
+      },
+      {
+        "nativeExtraGain": 0.9050966799187811,
+        "reconstructedExtraGain": 0.905096679918781,
+        "step": 7
+      },
+      {
+        "nativeExtraGain": 1.0119288512538815,
+        "reconstructedExtraGain": 1.0119288512538813,
+        "step": 8
+      },
+      {
+        "nativeExtraGain": 1.1085125168440817,
+        "reconstructedExtraGain": 1.1085125168440815,
+        "step": 9
+      },
+      {
+        "nativeExtraGain": 1.1973303637676616,
+        "reconstructedExtraGain": 1.1973303637676613,
+        "step": 10
+      },
+      {
+        "nativeExtraGain": 1.2800000000000002,
+        "reconstructedExtraGain": 1.28,
+        "step": 11
+      },
+      {
+        "nativeExtraGain": 1.3576450198781715,
+        "reconstructedExtraGain": 1.3576450198781713,
+        "step": 12
+      },
+      {
+        "nativeExtraGain": 1.4310835055998656,
+        "reconstructedExtraGain": 1.4310835055998654,
+        "step": 13
+      },
+      {
+        "nativeExtraGain": 1.5009330431434977,
+        "reconstructedExtraGain": 1.5009330431434975,
+        "step": 14
+      },
+      {
+        "nativeExtraGain": 1.5676734353812343,
+        "reconstructedExtraGain": 1.567673435381234,
+        "step": 15
+      },
+      {
+        "nativeExtraGain": 1.6316862443496916,
+        "reconstructedExtraGain": 1.6316862443496913,
+        "step": 16
+      }
+    ],
+    "tested": 321
+  },
+  "failures": [],
+  "floatingCursor": [
+    {
+      "expected": [
+        1,
+        10
+      ],
+      "input": [
+        -20,
+        -20
+      ],
+      "lineSnapping": 0,
+      "native": [
+        1,
+        10
+      ]
+    },
+    {
+      "expected": [
+        1,
+        10
+      ],
+      "input": [
+        1,
+        10
+      ],
+      "lineSnapping": 0,
+      "native": [
+        1,
+        10
+      ]
+    },
+    {
+      "expected": [
+        100,
+        25
+      ],
+      "input": [
+        100,
+        25
+      ],
+      "lineSnapping": 0,
+      "native": [
+        100,
+        25
+      ]
+    },
+    {
+      "expected": [
+        100,
+        40
+      ],
+      "input": [
+        100,
+        40
+      ],
+      "lineSnapping": 0,
+      "native": [
+        100,
+        40
+      ]
+    },
+    {
+      "expected": [
+        100,
+        50
+      ],
+      "input": [
+        100,
+        50
+      ],
+      "lineSnapping": 0,
+      "native": [
+        100,
+        50
+      ]
+    },
+    {
+      "expected": [
+        100,
+        75
+      ],
+      "input": [
+        100,
+        75
+      ],
+      "lineSnapping": 0,
+      "native": [
+        100,
+        75
+      ]
+    },
+    {
+      "expected": [
+        199,
+        90
+      ],
+      "input": [
+        199,
+        90
+      ],
+      "lineSnapping": 0,
+      "native": [
+        199,
+        90
+      ]
+    },
+    {
+      "expected": [
+        199,
+        90
+      ],
+      "input": [
+        250,
+        130
+      ],
+      "lineSnapping": 0,
+      "native": [
+        199,
+        90
+      ]
+    },
+    {
+      "expected": [
+        1,
+        38
+      ],
+      "input": [
+        -20,
+        -20
+      ],
+      "lineSnapping": 1,
+      "native": [
+        1,
+        38
+      ]
+    },
+    {
+      "expected": [
+        1,
+        38
+      ],
+      "input": [
+        1,
+        10
+      ],
+      "lineSnapping": 1,
+      "native": [
+        1,
+        38
+      ]
+    },
+    {
+      "expected": [
+        100,
+        42.5
+      ],
+      "input": [
+        100,
+        25
+      ],
+      "lineSnapping": 1,
+      "native": [
+        100,
+        42.5
+      ]
+    },
+    {
+      "expected": [
+        100,
+        47
+      ],
+      "input": [
+        100,
+        40
+      ],
+      "lineSnapping": 1,
+      "native": [
+        100,
+        47
+      ]
+    },
+    {
+      "expected": [
+        100,
+        50
+      ],
+      "input": [
+        100,
+        50
+      ],
+      "lineSnapping": 1,
+      "native": [
+        100,
+        50
+      ]
+    },
+    {
+      "expected": [
+        100,
+        57.5
+      ],
+      "input": [
+        100,
+        75
+      ],
+      "lineSnapping": 1,
+      "native": [
+        100,
+        57.5
+      ]
+    },
+    {
+      "expected": [
+        199,
+        62
+      ],
+      "input": [
+        199,
+        90
+      ],
+      "lineSnapping": 1,
+      "native": [
+        199,
+        62
+      ]
+    },
+    {
+      "expected": [
+        199,
+        62
+      ],
+      "input": [
+        250,
+        130
+      ],
+      "lineSnapping": 1,
+      "native": [
+        199,
+        62
+      ]
+    }
+  ],
+  "kind": "direct-native-method-tests",
+  "longPressRegions": [
+    "{{103.3333333333333, 169}, {197.33333333333331, 81}}"
+  ],
+  "os": "26.5",
+  "passed": 1,
+  "recognizer": {
+    "allowableMovement": 16,
+    "longPressOnly": true,
+    "maximumNumberOfTouches": 1,
+    "minimumNumberOfTouches": 1,
+    "minimumPressDuration": 0.375
+  },
+  "releaseHistory": [
+    {
+      "expected": [
+        20,
+        30
+      ],
+      "native": [
+        20,
+        30
+      ],
+      "shortHistory": 0
+    },
+    {
+      "expected": [
+        40,
+        50
+      ],
+      "native": [
+        40,
+        50
+      ],
+      "shortHistory": 1
+    }
+  ],
+  "selectionGeometry": [
+    {
+      "caret": "{{17, 7}, {2, 28}}",
+      "closestUTF16Offset": 1,
+      "point": [
+        20,
+        20
+      ],
+      "selectedUTF16Offset": 1
+    },
+    {
+      "caret": "{{97.333333333333329, 7}, {2, 28}}",
+      "closestUTF16Offset": 9,
+      "point": [
+        100,
+        20
+      ],
+      "selectedUTF16Offset": 9
+    },
+    {
+      "caret": "{{200, 7}, {2, 28}}",
+      "closestUTF16Offset": 20,
+      "point": [
+        200,
+        20
+      ],
+      "selectedUTF16Offset": 20
+    },
+    {
+      "caret": "{{100.66666666666667, 33.333333333333336}, {2, 28}}",
+      "closestUTF16Offset": 29,
+      "point": [
+        100,
+        45
+      ],
+      "selectedUTF16Offset": 29
+    },
+    {
+      "caret": "{{104.33333333333333, 59.666666666666664}, {2, 28}}",
+      "closestUTF16Offset": 54,
+      "point": [
+        100,
+        70
+      ],
+      "selectedUTF16Offset": 54
+    },
+    {
+      "caret": "{{77.666666666666671, 85.666666666666671}, {2, 28}}",
+      "closestUTF16Offset": 78,
+      "point": [
+        100,
+        95
+      ],
+      "selectedUTF16Offset": 78
+    },
+    {
+      "caret": "{{77.666666666666671, 85.666666666666671}, {2, 28}}",
+      "closestUTF16Offset": 78,
+      "point": [
+        100,
+        120
+      ],
+      "selectedUTF16Offset": 78
+    },
+    {
+      "caret": "{{77.666666666666671, 85.666666666666671}, {2, 28}}",
+      "closestUTF16Offset": 78,
+      "point": [
+        100,
+        145
+      ],
+      "selectedUTF16Offset": 78
+    },
+    {
+      "caret": "{{4, 7}, {2, 28}}",
+      "closestUTF16Offset": 0,
+      "point": [
+        -100,
+        -100
+      ],
+      "selectedUTF16Offset": 0
+    },
+    {
+      "caret": "{{77.666666666666671, 85.666666666666671}, {2, 28}}",
+      "closestUTF16Offset": 78,
+      "point": [
+        1000,
+        1000
+      ],
+      "selectedUTF16Offset": 78
+    }
+  ],
+  "settings": {
+    "allowExtendingSelections": true,
+    "gain": 0.2,
+    "linear": 2,
+    "parabolic": 5,
+    "shouldPreferEndOfWord": false,
+    "shouldUseAcceleration": true
+  },
+  "unicodeGeometryCases": 524
+}

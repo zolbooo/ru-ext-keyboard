@@ -1,0 +1,9 @@
+expr -l objc++ -- (void)dumpClass((Class)objc_getClass("_UIKeyboardTextSelectionGestureController"))
+expr -l objc++ -- (void)dumpClass((Class)objc_getClass("_UIKeyboardBasedTextSelectionGestureController"))
+expr -l objc++ -- (void)dumpClass((Class)objc_getClass("_UIKeyboardIndirectTextSelectionGestureState"))
+expr -l objc++ -- (void)dumpClass((Class)objc_getClass("_UITextSelectionForceGesture"))
+expr -l objc++ -- (void)dumpClass((Class)objc_getClass("_UIKeyboardTextSelectionController"))
+expr -l objc++ -- (void)dumpClass((Class)objc_getClass("_UIKeyboardAsyncTextSelectionController"))
+disassemble -n '-[UIKeyboardLayoutStar setTrackpadMode:animated:]'
+detach
+quit

@@ -6,6 +6,7 @@ Cyrillic variants:
 - Long-press **о** for **ө**
 - Long-press **у** for **ү**
 - Long-press **₽** for **₮**
+- Hold **Space**, then slide left or right to move the cursor
 - Tap the globe key to switch to the next installed keyboard
 
 ## Run

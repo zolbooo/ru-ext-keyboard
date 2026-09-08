@@ -52,6 +52,7 @@ final class KeyboardViewController: UIInputViewController {
     private lazy var backspaceWordTokenizer = NLTokenizer(unit: .word)
     private weak var returnKey: KeyboardButton?
     private var appliedReturnKeyType: UIReturnKeyType?
+    private var cursorDocumentIdentifier: UUID?
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -65,6 +66,13 @@ final class KeyboardViewController: UIInputViewController {
         if let layoutContainer {
             layoutContainer.bringSubviewToFront(touchRouter)
         }
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        touchRouter.cancelAllTouches()
+        endBackspace()
+        dismissVariantPopup()
     }
 
     deinit {
@@ -90,6 +98,27 @@ final class KeyboardViewController: UIInputViewController {
         touchRouter.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(keyboardContent)
         container.addSubview(touchRouter)
+        touchRouter.cursorModeChanged = { [weak self] enabled in
+            guard let self else { return }
+            self.endBackspace()
+            self.dismissVariantPopup()
+            self.cursorDocumentIdentifier = enabled ? self.textDocumentProxy.documentIdentifier : nil
+            self.touchRouter.buttons.forEach { $0.setCursorMode(enabled) }
+        }
+        touchRouter.moveCursor = { [weak self] offset in
+            guard let self else { return }
+            guard self.cursorDocumentIdentifier == self.textDocumentProxy.documentIdentifier else {
+                self.touchRouter.cancelAllTouches()
+                return
+            }
+            let context = offset < 0
+                ? self.textDocumentProxy.documentContextBeforeInput
+                : self.textDocumentProxy.documentContextAfterInput
+            let documentOffset = SpaceCursorMotion.documentOffset(for: offset, context: context)
+            if documentOffset != 0 {
+                self.textDocumentProxy.adjustTextPosition(byCharacterOffset: documentOffset)
+            }
+        }
         keyboardHeightConstraint = container.heightAnchor.constraint(equalToConstant: 216)
         NSLayoutConstraint.activate([
             keyboardHeightConstraint,
@@ -106,6 +135,10 @@ final class KeyboardViewController: UIInputViewController {
 
     override func textDidChange(_ textInput: UITextInput?) {
         super.textDidChange(textInput)
+        if let cursorDocumentIdentifier,
+           cursorDocumentIdentifier != textDocumentProxy.documentIdentifier {
+            touchRouter.cancelAllTouches()
+        }
         updateReturnKey()
     }
 
@@ -277,6 +310,8 @@ final class KeyboardViewController: UIInputViewController {
             self?.insert(" ")
         }
         space.accessibilityLabel = "Пробел"
+        space.accessibilityHint = "Удерживайте и двигайте пальцем влево или вправо для перемещения курсора"
+        space.isCursorKey = true
         row.addSubview(space)
 
         let enter = KeyboardButton()
@@ -514,6 +549,7 @@ final class KeyboardViewController: UIInputViewController {
         let metrics = KeyboardMetrics(width: width, traits: traitCollection)
         // Width can change without changing portrait spacing or height.
         guard force || metrics != appliedMetrics || appliedLayoutWidth != width else { return }
+        touchRouter.cancelAllTouches()
         appliedMetrics = metrics
         appliedLayoutWidth = width
         keyboardHeightConstraint.constant = metrics.keyboardHeight
@@ -691,6 +727,7 @@ private final class KeyboardButton: UIControl {
     var longPressEndedAction: ((CGPoint) -> Void)?
     var longPressCancelledAction: (() -> Void)?
     var isRoutableCharacter = false
+    var isCursorKey = false
 
     private var routedHighlightCount = 0
     private var titleHorizontalOffset: CGFloat = 0
@@ -771,6 +808,13 @@ private final class KeyboardButton: UIControl {
         setNeedsLayout()
     }
 
+    func setCursorMode(_ enabled: Bool) {
+        // Leave the key surfaces and hit regions intact; hide only the legends.
+        storedTitleLabel?.alpha = enabled ? 0 : 1
+        storedImageView?.alpha = enabled ? 0 : 1
+        isAccessibilityElement = !enabled
+    }
+
     func beginRoutedHighlight() {
         routedHighlightCount += 1
         isHighlighted = true
@@ -810,6 +854,86 @@ private final class KeyboardButton: UIControl {
 
 }
 
+// Native gain operates on per-sample translation, not velocity. The 8-point
+// character spacing is our extension's tuning: the proxy exposes no editor geometry.
+private struct SpaceCursorMotion {
+    static let holdDuration: TimeInterval = 0.375
+    static let allowableMovement: CGFloat = 16
+    static let regrabDuration: TimeInterval = 0.5
+    static let pointsPerCharacter: CGFloat = 8
+
+    private struct Sample {
+        let point: CGPoint
+        let time: TimeInterval
+    }
+    private var previous: CGPoint
+    private var remainder: CGFloat = 0
+    private var history: [Sample]
+
+    init(origin: CGPoint, time: TimeInterval) {
+        previous = origin
+        history = [Sample(point: origin, time: time)]
+    }
+
+    mutating func move(to point: CGPoint, time: TimeInterval) -> Int {
+        let dx = point.x - previous.x
+        let dy = point.y - previous.y
+        let distance = hypot(dx, dy)
+        let gain: CGFloat
+        if distance <= 2 { gain = 0.04 * distance * distance }
+        else if distance <= 5 { gain = 0.16 * distance - 0.16 }
+        else { gain = sqrt(0.2048 * distance - 0.6144) }
+        previous = point
+        record(point, time: time)
+        return consume(dx * (1 + gain))
+    }
+
+    mutating func finish(at point: CGPoint, time: TimeInterval) -> (offset: Int, careful: Bool) {
+        record(point, time: time)
+        let careful = isCareful(at: time)
+        // No host caret position is available to safely rewind earlier proxy calls.
+        // Stabilize a careful lift by keeping the last delivered position instead.
+        let offset = careful ? 0 : consume(point.x - previous.x)
+        return (offset, careful)
+    }
+
+    static func documentOffset(for steps: Int, context: String?) -> Int {
+        // UIKit's proxy uses UTF-16 offsets. Count whole graphemes in the available
+        // context so a step never deliberately lands inside an emoji or accent.
+        // Hosts may withhold context; in that case only the proxy's raw units exist.
+        guard let context else { return steps }
+        if steps < 0 { return -context.suffix(-steps).utf16.count }
+        return context.prefix(steps).utf16.count
+    }
+
+    private mutating func consume(_ distance: CGFloat) -> Int {
+        remainder += distance
+        let offset = Int(remainder / Self.pointsPerCharacter)
+        remainder -= CGFloat(offset) * Self.pointsPerCharacter
+        return offset
+    }
+
+    private mutating func record(_ point: CGPoint, time: TimeInterval) {
+        history.append(Sample(point: point, time: time))
+        // Keep one sample before the window, including across a stationary pause.
+        while history.count > 2 && history[1].time <= time - 0.2 { history.removeFirst() }
+    }
+
+    private func isCareful(at time: TimeInterval) -> Bool {
+        guard let first = history.first, first.time <= time - 0.2 else { return false }
+        var distance: CGFloat = 0
+        for index in 1..<history.count {
+            let a = history[index - 1]
+            let b = history[index]
+            let segment = hypot(b.point.x - a.point.x, b.point.y - a.point.y)
+            // Only the part of a segment inside the last 0.2 seconds contributes.
+            let fraction = b.time > a.time ? min(1, max(0, (b.time - (time - 0.2)) / (b.time - a.time))) : 1
+            distance += segment * fraction
+        }
+        return distance < 15
+    }
+}
+
 private final class KeyboardTouchRouterView: UIView {
     private enum TrackingMode {
         case character
@@ -826,6 +950,7 @@ private final class KeyboardTouchRouterView: UIView {
         var isShowingVariants = false
         var isHighlighted = true
         var controlPressIsActive = false
+        var isMovingCursor = false
 
         init(mode: TrackingMode, key: KeyboardButton, location: CGPoint) {
             self.mode = mode
@@ -837,6 +962,29 @@ private final class KeyboardTouchRouterView: UIView {
     }
 
     var buttons: [KeyboardButton] = []
+    var cursorModeChanged: ((Bool) -> Void)?
+    var moveCursor: ((Int) -> Void)?
+
+    private weak var cursorTouch: UITouch?
+    private var cursorMotion: SpaceCursorMotion?
+    private var continuationTimer: Timer?
+    private var continuationDeadline: TimeInterval?
+    private var cursorModeEnabled = false
+
+    private func setCursorMode(_ enabled: Bool) {
+        guard cursorModeEnabled != enabled else { return }
+        cursorModeEnabled = enabled
+        cursorModeChanged?(enabled)
+    }
+
+    private func endCursorMode() {
+        continuationTimer?.invalidate()
+        continuationTimer = nil
+        continuationDeadline = nil
+        cursorMotion = nil
+        cursorTouch = nil
+        setCursorMode(false)
+    }
 
     private static let longPressDuration: TimeInterval = 0.42
     private static let longPressMovement: CGFloat = 22
@@ -868,86 +1016,157 @@ private final class KeyboardTouchRouterView: UIView {
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         super.touchesBegan(touches, with: event)
         for touch in touches {
-            let location = touch.location(in: self)
-            guard let key = nearestButton(at: location) else { continue }
-            let mode: TrackingMode = key.isRoutableCharacter ? .character : .control
-            let active = ActiveTouch(mode: mode, key: key, location: location)
-            activeTouches[touch] = active
-            key.beginRoutedHighlight()
-            key.pressBeganAction?()
-            if mode == .control {
-                active.controlPressIsActive = true
-            } else {
-                scheduleLongPress(for: touch, active: active, key: key)
-            }
+            beginTouch(touch, at: touch.location(in: self), time: touch.timestamp)
         }
+    }
+
+    private func beginTouch(_ touch: UITouch, at location: CGPoint, time: TimeInterval) {
+        // Extra fingers cannot type or begin another gesture while scrubbing.
+        guard cursorTouch == nil, let key = nearestButton(at: location) else { return }
+        let canRegrab = key.isCursorKey && continuationDeadline.map { time < $0 } == true
+        if !canRegrab { endCursorMode() }
+        let mode: TrackingMode = key.isRoutableCharacter ? .character : .control
+        let active = ActiveTouch(mode: mode, key: key, location: location)
+        activeTouches[touch] = active
+        key.beginRoutedHighlight()
+        key.pressBeganAction?()
+        if mode == .control {
+            active.controlPressIsActive = true
+            if key.isCursorKey {
+                if canRegrab {
+                    activateCursor(touch, active: active, time: time)
+                } else {
+                    let timer = Timer(timeInterval: SpaceCursorMotion.holdDuration, repeats: false) {
+                        [weak self, weak touch, weak active] _ in
+                        guard let self, let touch, let active else { return }
+                        self.activateCursor(touch, active: active, time: ProcessInfo.processInfo.systemUptime)
+                    }
+                    active.longPressTimer = timer
+                    RunLoop.main.add(timer, forMode: .common)
+                }
+            }
+        } else {
+            scheduleLongPress(for: touch, active: active, key: key)
+        }
+    }
+
+    private func activateCursor(_ touch: UITouch, active: ActiveTouch, time: TimeInterval) {
+        guard activeTouches[touch] === active, cursorTouch == nil,
+              active.initialKey.isCursorKey else { return }
+        active.longPressTimer?.invalidate()
+        active.longPressTimer = nil
+        continuationTimer?.invalidate()
+        continuationTimer = nil
+        continuationDeadline = nil
+        for otherTouch in Array(activeTouches.keys) where otherTouch !== touch {
+            cancel(otherTouch)
+        }
+        endHighlightIfNeeded(active, key: active.initialKey)
+        if active.controlPressIsActive {
+            active.initialKey.pressEndedAction?()
+            active.controlPressIsActive = false
+        }
+        active.isMovingCursor = true
+        cursorTouch = touch
+        cursorMotion = SpaceCursorMotion(origin: active.latestLocation, time: time)
+        setCursorMode(true)
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
         super.touchesMoved(touches, with: event)
         for touch in touches {
-            guard let active = activeTouches[touch] else { continue }
-            let location = touch.location(in: self)
-            active.latestLocation = location
-
-            if active.isShowingVariants {
-                active.currentKey?.longPressMovedAction?(location)
-                continue
+            // Keep the same sample stream regardless of event coalescing.
+            for sample in event?.coalescedTouches(for: touch) ?? [touch] {
+                moveTouch(touch, to: sample.location(in: self), time: sample.timestamp)
             }
+        }
+    }
 
-            switch active.mode {
-            case .character:
-                updateCharacterTouch(touch, active: active, at: location)
-            case .control:
-                updateControlTouch(active, at: location)
+    private func moveTouch(_ touch: UITouch, to location: CGPoint, time: TimeInterval) {
+        guard let active = activeTouches[touch] else { return }
+        active.latestLocation = location
+        if active.isMovingCursor {
+            let offset = cursorMotion?.move(to: location, time: time) ?? 0
+            if offset != 0 { moveCursor?(offset) }
+            return
+        }
+        if active.isShowingVariants {
+            active.currentKey?.longPressMovedAction?(location)
+            return
+        }
+        switch active.mode {
+        case .character:
+            updateCharacterTouch(touch, active: active, at: location)
+        case .control:
+            if active.initialKey.isCursorKey,
+               hypot(location.x - active.longPressOrigin.x, location.y - active.longPressOrigin.y)
+                > SpaceCursorMotion.allowableMovement {
+                active.longPressTimer?.invalidate()
+                active.longPressTimer = nil
             }
+            updateControlTouch(active, at: location)
         }
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
         super.touchesEnded(touches, with: event)
         for touch in touches {
-            guard let active = activeTouches.removeValue(forKey: touch) else { continue }
-            active.longPressTimer?.invalidate()
-            active.longPressTimer = nil
-            let location = touch.location(in: self)
+            endTouch(touch, at: touch.location(in: self), time: touch.timestamp)
+        }
+    }
 
-            if active.isShowingVariants {
-                active.currentKey?.longPressEndedAction?(location)
-                if variantTouch === touch { variantTouch = nil }
-                continue
+    private func endTouch(_ touch: UITouch, at location: CGPoint, time: TimeInterval) {
+        guard let active = activeTouches.removeValue(forKey: touch) else { return }
+        active.longPressTimer?.invalidate()
+        active.longPressTimer = nil
+        if active.isMovingCursor {
+            let finish = cursorMotion?.finish(at: location, time: time)
+            if let offset = finish?.offset, offset != 0 { moveCursor?(offset) }
+            // A document switch in moveCursor cancels the entire session.
+            guard cursorModeEnabled else { return }
+            cursorTouch = nil
+            cursorMotion = nil
+            let frame = active.initialKey.convert(active.initialKey.bounds, to: self)
+            let region = CGRect(x: frame.minX, y: frame.minY, width: frame.width, height: frame.height * 1.5)
+            if finish?.careful == true, region.contains(location) {
+                continuationDeadline = time + SpaceCursorMotion.regrabDuration
+                let timer = Timer(timeInterval: SpaceCursorMotion.regrabDuration, repeats: false) { [weak self] _ in
+                    self?.endCursorMode()
+                }
+                continuationTimer = timer
+                RunLoop.main.add(timer, forMode: .common)
+            } else {
+                endCursorMode()
             }
-
-            switch active.mode {
-            case .character:
-                if let key = active.currentKey {
-                    key.tapAction?()
-                    endHighlightIfNeeded(active, key: key)
-                }
-            case .control:
-                let isInside = nearestButton(at: location) === active.initialKey
-                if isInside {
-                    active.initialKey.tapAction?()
-                }
-                if active.controlPressIsActive {
-                    active.initialKey.pressEndedAction?()
-                }
-                endHighlightIfNeeded(active, key: active.initialKey)
+            return
+        }
+        if active.isShowingVariants {
+            active.currentKey?.longPressEndedAction?(location)
+            if variantTouch === touch { variantTouch = nil }
+            return
+        }
+        switch active.mode {
+        case .character:
+            if let key = active.currentKey {
+                key.tapAction?()
+                endHighlightIfNeeded(active, key: key)
             }
+        case .control:
+            let isInside = nearestButton(at: location) === active.initialKey
+            if isInside { active.initialKey.tapAction?() }
+            if active.controlPressIsActive { active.initialKey.pressEndedAction?() }
+            endHighlightIfNeeded(active, key: active.initialKey)
         }
     }
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
         super.touchesCancelled(touches, with: event)
-        for touch in touches {
-            cancel(touch)
-        }
+        for touch in touches { cancel(touch) }
     }
 
     func cancelAllTouches() {
-        for touch in Array(activeTouches.keys) {
-            cancel(touch)
-        }
+        for touch in Array(activeTouches.keys) { cancel(touch) }
+        endCursorMode()
     }
 
     private func updateCharacterTouch(_ touch: UITouch, active: ActiveTouch, at location: CGPoint) {
@@ -1017,6 +1236,7 @@ private final class KeyboardTouchRouterView: UIView {
         guard let active = activeTouches.removeValue(forKey: touch) else { return }
         active.longPressTimer?.invalidate()
         active.longPressTimer = nil
+        if active.isMovingCursor { endCursorMode() }
         if active.isShowingVariants {
             active.currentKey?.longPressCancelledAction?()
             if variantTouch === touch { variantTouch = nil }
