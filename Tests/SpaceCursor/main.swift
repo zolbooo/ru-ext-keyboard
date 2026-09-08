@@ -169,6 +169,20 @@ private extension KeyboardTouchRouterView {
 }
 
 private extension KeyboardViewController {
+    func runDetachedCursorChecks() {
+        loadViewIfNeeded()
+        view.frame = CGRect(x: 0, y: 0, width: 393, height: 216)
+        view.layoutIfNeeded()
+        check(currentDocumentIdentifier == nil, "Detached proxy has no document identity")
+        // Previously crashed inside Swift's non-optional UUID bridge.
+        scrubForCheck()
+        check(cursorDocumentIdentifier == nil, "Reject cursor mode without an editor")
+        check(touchRouter.buttons.allSatisfy { $0.isAccessibilityElement && !$0.isHighlighted },
+              "Rejected activation restores normal keys")
+        textDidChange(nil)
+        viewWillDisappear(false)
+    }
+
     func runLifecycleChecks() {
         loadViewIfNeeded()
         view.frame = CGRect(x: 0, y: 0, width: 393, height: 216)
@@ -294,6 +308,7 @@ private final class CursorTestDelegate: UIResponder, UIApplicationDelegate {
         DispatchQueue.main.async {
             checkMotion()
             KeyboardTouchRouterView().runCursorChecks()
+            KeyboardViewController().runDetachedCursorChecks()
             let editor = CursorEditor(frame: CGRect(x: 0, y: 60, width: 360, height: 240))
             editor.text = "АБВГД 👨‍👩‍👧‍👦 🇲🇳 е\u{301} конец"
             window.rootViewController!.view.addSubview(editor)

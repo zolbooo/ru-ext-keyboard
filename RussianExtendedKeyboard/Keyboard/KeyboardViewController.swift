@@ -105,7 +105,15 @@ final class KeyboardViewController: UIInputViewController {
             guard let self else { return }
             self.endBackspace()
             self.dismissVariantPopup()
-            self.cursorDocumentIdentifier = enabled ? self.textDocumentProxy.documentIdentifier : nil
+            if enabled {
+                guard let identifier = self.currentDocumentIdentifier else {
+                    self.touchRouter.cancelAllTouches()
+                    return
+                }
+                self.cursorDocumentIdentifier = identifier
+            } else {
+                self.cursorDocumentIdentifier = nil
+            }
             self.touchRouter.buttons.forEach { $0.setCursorMode(enabled) }
         }
         touchRouter.cursorBegan = { [weak self] in
@@ -113,7 +121,8 @@ final class KeyboardViewController: UIInputViewController {
         }
         touchRouter.moveCursor = { [weak self] offset in
             guard let self else { return }
-            guard self.cursorDocumentIdentifier == self.textDocumentProxy.documentIdentifier else {
+            guard let identifier = self.currentDocumentIdentifier,
+                  self.cursorDocumentIdentifier == identifier else {
                 self.touchRouter.cancelAllTouches()
                 return
             }
@@ -140,10 +149,18 @@ final class KeyboardViewController: UIInputViewController {
         ])
     }
 
+    private var currentDocumentIdentifier: UUID? {
+        // UIKit can return nil while the proxy is disconnected, despite this
+        // public getter's nonnull annotation. Read the Objective-C result before
+        // bridging: direct Swift access traps in UUID._unconditionallyBridgeFromObjectiveC.
+        textDocumentProxy.perform(#selector(getter: UITextDocumentProxy.documentIdentifier))?
+            .takeUnretainedValue() as? UUID
+    }
+
     override func textDidChange(_ textInput: UITextInput?) {
         super.textDidChange(textInput)
         if let cursorDocumentIdentifier,
-           cursorDocumentIdentifier != textDocumentProxy.documentIdentifier {
+           cursorDocumentIdentifier != currentDocumentIdentifier {
             touchRouter.cancelAllTouches()
         }
         updateReturnKey()
@@ -1114,6 +1131,8 @@ private final class KeyboardTouchRouterView: UIView {
         cursorTouch = touch
         cursorMotion = SpaceCursorMotion(origin: active.latestLocation, time: time)
         setCursorMode(true)
+        // The controller may reject activation when its editor has disconnected.
+        guard cursorModeEnabled, cursorTouch === touch else { return }
         cursorBegan?()
     }
 

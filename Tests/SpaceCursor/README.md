@@ -15,7 +15,8 @@ fired directly so tests do not depend on wall-clock hold accuracy.
 Coverage includes short taps, hold cancellation, origin reset, acceleration,
 reversal, vertical-only movement, competing fingers, backspace and variant
 cancellation, careful release, continuation expiry/re-grab, layout changes,
-dismissal, accessibility, and key-legend presentation. A real `UITextView` hosts
+dismissal, accessibility, and key-legend presentation. A detached-editor case
+checks that a nil document identifier cancels cursor activation without crashing. A real `UITextView` hosts
 the keyboard as its input view controller to check the public document proxy,
 including Cyrillic, family emoji, flags, combining marks, and text boundaries.
 
