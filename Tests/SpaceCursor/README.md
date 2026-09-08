@@ -27,6 +27,9 @@ feel or compatibility with every third-party editor.
 ## Product behavior and tuning
 
 - Hold Space for 0.375 seconds, staying within 16 points before activation.
+- With Full Access enabled, activation/re-grab gives a light impact and cursor
+  steps give selection ticks, limited to 20 per second. Simulator checks cannot
+  verify physical haptic output.
 - After the key legends disappear, slide left/right. Vertical motion alone does
   not move the cursor. Recovered two-dimensional sample length sets acceleration.
 - Eight accelerated points produce one character step. This is extension tuning,

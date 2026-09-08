@@ -35,6 +35,8 @@ private extension KeyboardTouchRouterView {
         buttons = [space, letter, delete]
         var spaces = 0, letters = 0, deletesStarted = 0, deletesEnded = 0, variantsCancelled = 0
         var offsets: [Int] = []
+        var activations = 0
+        cursorBegan = { activations += 1 }
         space.tapAction = { spaces += 1 }
         letter.tapAction = { letters += 1 }
         letter.longPressBeganAction = { _ in }
@@ -55,7 +57,9 @@ private extension KeyboardTouchRouterView {
         func hold(_ touch: UITouch) {
             check(activeTouches[touch]?.longPressTimer != nil, "Space must schedule activation")
             time += 0.375
+            let previousActivations = activations
             activateCursor(touch, active: activeTouches[touch]!, time: time)
+            check(activations == previousActivations + 1, "Each activation requests one haptic cue")
             check(cursorTouch === touch && cursorModeEnabled, "Space should capture cursor gesture")
             check(!space.isHighlighted, "Activation should remove the key highlight")
         }
@@ -71,6 +75,7 @@ private extension KeyboardTouchRouterView {
         let tapTimer = activeTouches[touch]!.longPressTimer!
         endTouch(touch, at: center, time: time + 0.1)
         tapTimer.fire()
+        check(activations == 0, "A short Space tap must not request cursor haptics")
         check(spaces == 1 && !cursorModeEnabled, "Short Space tap inserts once and cancels activation")
 
         touch = start()
@@ -107,7 +112,9 @@ private extension KeyboardTouchRouterView {
         check(cursorModeEnabled && continuationTimer != nil, "Careful release keeps a re-grab window")
         let expiredTimer = continuationTimer!
         time += 0.4
+        let beforeRegrab = activations
         let regrab = start()
+        check(activations == beforeRegrab + 1, "Re-grab requests its own activation cue")
         check(cursorTouch === regrab && activeTouches[regrab]?.longPressTimer == nil, "Quick re-grab must activate immediately")
         expiredTimer.fire()
         check(cursorTouch === regrab, "Old continuation timer must not interrupt re-grab")
@@ -261,12 +268,16 @@ private func checkUnicodeProxy(_ editor: CursorEditor, completion: @escaping () 
         guard index < cases.count else { completion(); return }
         let item = cases[index]
         editor.selectedRange = NSRange(location: item.start, length: 0)
-        editor.keyboard.scrubForCheck(distance: item.distance)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) {
-            check(editor.selectedRange.location == item.expected,
-                  "Proxy character boundary: from \(item.start), got \(editor.selectedRange.location), expected \(item.expected)")
-            check(editor.text == original, "Scrubbing Unicode never edits text")
-            run(index + 1)
+        // Let the editor publish its new selection/context before starting a
+        // separate gesture, just as the hold delay does during ordinary use.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            editor.keyboard.scrubForCheck(distance: item.distance)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                check(editor.selectedRange.location == item.expected,
+                      "Proxy character boundary: from \(item.start), got \(editor.selectedRange.location), expected \(item.expected)")
+                check(editor.text == original, "Scrubbing Unicode never edits text")
+                run(index + 1)
+            }
         }
     }
     run(0)

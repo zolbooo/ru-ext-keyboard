@@ -53,6 +53,9 @@ final class KeyboardViewController: UIInputViewController {
     private weak var returnKey: KeyboardButton?
     private var appliedReturnKeyType: UIReturnKeyType?
     private var cursorDocumentIdentifier: UUID?
+    private var cursorActivationFeedback: UIImpactFeedbackGenerator?
+    private var cursorSelectionFeedback: UISelectionFeedbackGenerator?
+    private var lastCursorFeedbackTime: TimeInterval = 0
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -105,6 +108,9 @@ final class KeyboardViewController: UIInputViewController {
             self.cursorDocumentIdentifier = enabled ? self.textDocumentProxy.documentIdentifier : nil
             self.touchRouter.buttons.forEach { $0.setCursorMode(enabled) }
         }
+        touchRouter.cursorBegan = { [weak self] in
+            self?.playCursorActivationFeedback()
+        }
         touchRouter.moveCursor = { [weak self] offset in
             guard let self else { return }
             guard self.cursorDocumentIdentifier == self.textDocumentProxy.documentIdentifier else {
@@ -117,6 +123,7 @@ final class KeyboardViewController: UIInputViewController {
             let documentOffset = SpaceCursorMotion.documentOffset(for: offset, context: context)
             if documentOffset != 0 {
                 self.textDocumentProxy.adjustTextPosition(byCharacterOffset: documentOffset)
+                self.playCursorMovementFeedback()
             }
         }
         keyboardHeightConstraint = container.heightAnchor.constraint(equalToConstant: 216)
@@ -312,6 +319,9 @@ final class KeyboardViewController: UIInputViewController {
         space.accessibilityLabel = "Пробел"
         space.accessibilityHint = "Удерживайте и двигайте пальцем влево или вправо для перемещения курсора"
         space.isCursorKey = true
+        space.pressBeganAction = { [weak self] in
+            self?.prepareCursorFeedback()
+        }
         row.addSubview(space)
 
         let enter = KeyboardButton()
@@ -530,6 +540,39 @@ final class KeyboardViewController: UIInputViewController {
         } else {
             variantPresentationFeedback?.impactOccurred(intensity: 0.85)
         }
+    }
+
+    private func prepareCursorFeedback() {
+        guard hasFullAccess else { return }
+        if cursorActivationFeedback == nil {
+            if #available(iOS 17.5, *), let container = layoutContainer {
+                cursorActivationFeedback = UIImpactFeedbackGenerator(style: .light, view: container)
+                cursorSelectionFeedback = UISelectionFeedbackGenerator(view: container)
+            } else {
+                cursorActivationFeedback = UIImpactFeedbackGenerator(style: .light)
+                cursorSelectionFeedback = UISelectionFeedbackGenerator()
+            }
+        }
+        cursorActivationFeedback?.prepare()
+        cursorSelectionFeedback?.prepare()
+    }
+
+    private func playCursorActivationFeedback() {
+        lastCursorFeedbackTime = 0
+        guard hasFullAccess else { return }
+        prepareCursorFeedback()
+        cursorActivationFeedback?.impactOccurred(intensity: 0.7)
+    }
+
+    private func playCursorMovementFeedback() {
+        guard hasFullAccess else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        // Coalesced touch samples and fast scrubs can request many cursor steps.
+        // Give one light selection tick per update, at most twenty times a second.
+        guard now - lastCursorFeedbackTime >= 0.05 else { return }
+        lastCursorFeedbackTime = now
+        cursorSelectionFeedback?.selectionChanged()
+        cursorSelectionFeedback?.prepare()
     }
 
     private func dismissVariantPopup() {
@@ -963,6 +1006,7 @@ private final class KeyboardTouchRouterView: UIView {
 
     var buttons: [KeyboardButton] = []
     var cursorModeChanged: ((Bool) -> Void)?
+    var cursorBegan: (() -> Void)?
     var moveCursor: ((Int) -> Void)?
 
     private weak var cursorTouch: UITouch?
@@ -1070,6 +1114,7 @@ private final class KeyboardTouchRouterView: UIView {
         cursorTouch = touch
         cursorMotion = SpaceCursorMotion(origin: active.latestLocation, time: time)
         setCursorMode(true)
+        cursorBegan?()
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
