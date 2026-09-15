@@ -37,6 +37,8 @@ final class KeyboardViewController: UIInputViewController {
     private let touchRouter = KeyboardTouchRouterView()
     private weak var layoutContainer: UIView?
     private var page: Page = .letters
+    private var symbolPageReturn = SymbolPageReturnPolicy()
+    private var symbolPageDocumentIdentifier: UUID?
     private var shifted = false
     private var characterKeys: [(button: KeyboardButton, character: String)] = []
     private var keyboardRows: [UIView] = []
@@ -313,6 +315,8 @@ final class KeyboardViewController: UIInputViewController {
             title: page == .letters ? "123" : "АБВ"
         ) { [weak self] in
             guard let self else { return }
+            self.symbolPageReturn.reset()
+            self.symbolPageDocumentIdentifier = self.currentDocumentIdentifier
             self.page = self.page == .letters ? .symbols : .letters
             self.shifted = false
             self.rebuildKeyboard()
@@ -666,7 +670,33 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func insert(_ text: String) {
+        let identifier = currentDocumentIdentifier
+        if symbolPageDocumentIdentifier != identifier {
+            symbolPageReturn.reset()
+            symbolPageDocumentIdentifier = identifier
+        }
+        let shouldReturn: Bool
+        if page == .letters {
+            shouldReturn = false
+        } else {
+            // Numeric fields prefer their symbols page. Other field types can
+            // return to letters after a completed symbol entry.
+            let prefersSymbols: Bool
+            switch textDocumentProxy.keyboardType ?? .default {
+            case .numbersAndPunctuation, .numberPad, .decimalPad, .phonePad, .asciiCapableNumberPad:
+                prefersSymbols = true
+            default:
+                prefersSymbols = false
+            }
+            shouldReturn = symbolPageReturn.didInsert(text, prefersSymbols: prefersSymbols)
+        }
         textDocumentProxy.insertText(text)
+        if shouldReturn {
+            page = .letters
+            shifted = false
+            symbolPageReturn.reset()
+            rebuildKeyboard()
+        }
     }
 
 }
@@ -1489,5 +1519,25 @@ private final class VariantPopup: UIView {
         backgroundLayer.fillColor = popupColor.resolvedColor(with: traitCollection).cgColor
         selectionView.backgroundColor = selectionColor
         updateHighlight()
+    }
+}
+
+// Public-API approximation of native page return. Native per-key metadata is
+// private; apostrophe membership is our policy, not a verified native table.
+struct SymbolPageReturnPolicy {
+    private(set) var hasSymbolInput = false
+
+    mutating func reset() {
+        hasSymbolInput = false
+    }
+
+    mutating func didInsert(_ text: String, prefersSymbols: Bool) -> Bool {
+        guard !text.isEmpty else { return false }
+        let isSeparator = text == " " || text == "\n"
+        let shouldReturn = !prefersSymbols && (
+            text == "'" || text == "’" || (isSeparator && hasSymbolInput)
+        )
+        if !isSeparator { hasSymbolInput = true }
+        return shouldReturn
     }
 }
