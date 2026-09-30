@@ -73,6 +73,11 @@ final class KeyboardViewController: UIInputViewController {
         }
     }
 
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        updateReturnKey()
+    }
+
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         touchRouter.cancelAllTouches()
@@ -353,7 +358,9 @@ final class KeyboardViewController: UIInputViewController {
         row.addSubview(enter)
         returnKey = enter
         appliedReturnKeyType = nil
-        updateReturnKey()
+        // Reading a proxy trait before the host sends its text state makes UIKit build
+        // a placeholder state by enumerating input modes. viewWillAppear sets the first icon.
+        if view.window != nil { updateReturnKey() }
         return row
     }
 
